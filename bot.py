@@ -190,25 +190,23 @@ def callbacks(call):
 
     elif call.data == "presentation":
 
-        try:
-            with open("presentation.pdf", "rb") as f:
-                bot.send_document(
-                    chat_id,
-                    f,
-                    caption="📄 Презентация ВОЛНЫ"
-                )
-        except Exception:
-            bot.send_message(
+    try:
+        with open("presentation.pdf", "rb") as f:
+            bot.send_document(
                 chat_id,
-                "📄 Презентация пока не загружена."
+                f,
+                caption="📄 Презентация ВОЛНЫ"
             )
-
+    except Exception:
         kb = types.InlineKeyboardMarkup()
         kb.add(
             types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
         )
-        bot.send_message(chat_id, "⬅️ Назад", reply_markup=kb)
-
+        bot.send_message(
+            chat_id,
+            "📄 Презентация пока не загружена.",
+            reply_markup=kb
+        )
     elif call.data == "works":
 
         kb = types.InlineKeyboardMarkup()
