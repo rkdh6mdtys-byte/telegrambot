@@ -190,23 +190,24 @@ def callbacks(call):
 
     elif call.data == "presentation":
 
-    try:
-        with open("presentation.pdf", "rb") as f:
-            bot.send_document(
-                chat_id,
-                f,
-                caption="📄 Презентация ВОЛНЫ"
+        try:
+            with open("presentation.pdf", "rb") as f:
+                bot.send_document(
+                    chat_id,
+                    f,
+                    caption="📄 Презентация ВОЛНЫ"
+                )
+        except Exception:
+            kb = types.InlineKeyboardMarkup()
+            kb.add(
+                types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
             )
-    except Exception:
-        kb = types.InlineKeyboardMarkup()
-        kb.add(
-            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
-        )
-        bot.send_message(
-            chat_id,
-            "📄 Презентация пока не загружена.",
-            reply_markup=kb
-        )
+            bot.send_message(
+                chat_id,
+                "📄 Презентация пока не загружена.",
+                reply_markup=kb
+            )
+
     elif call.data == "works":
 
         kb = types.InlineKeyboardMarkup()
@@ -304,9 +305,9 @@ def form_handler(message):
         bot.send_message(ADMIN_ID, text)
 
         bot.send_message(
-    chat_id,
-    "✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время.\n\n/start"
-)
+            chat_id,
+            "✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время.\n\n/start"
+        )
 
         del user_state[chat_id]
         del user_data[chat_id]
