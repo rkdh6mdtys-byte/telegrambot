@@ -306,9 +306,9 @@ def form_handler(message):
         bot.send_message(ADMIN_ID, text)
 
         bot.send_message(
-            chat_id,
-            "✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время."
-        )
+    chat_id,
+    "✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время.\n\n/start"
+)
 
         del user_state[chat_id]
         del user_data[chat_id]
