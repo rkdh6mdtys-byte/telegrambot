@@ -1,9 +1,8 @@
-
 import telebot
 from telebot import types
 
 TOKEN = "8717077678:AAHI7-puYr1ucjLwzBzwHmEr16pQeDCTPlU"
-ADMIN_ID =  6133417158
+ADMIN_ID = 6133417158
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -36,6 +35,10 @@ def main_menu():
 
     kb.add(
         types.InlineKeyboardButton("📞 Менеджер", callback_data="manager")
+    )
+
+    kb.add(
+        types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
     )
 
     return kb
@@ -72,6 +75,13 @@ def callbacks(call):
             reply_markup=main_menu()
         )
 
+    elif call.data == "back_to_start":
+        bot.send_message(
+            chat_id,
+            "👇 Выберите интересующий раздел",
+            reply_markup=main_menu()
+        )
+
     elif call.data == "services":
 
         kb = types.InlineKeyboardMarkup(row_width=1)
@@ -80,6 +90,10 @@ def callbacks(call):
             types.InlineKeyboardButton("💍 Свадьбы", callback_data="service_wedding"),
             types.InlineKeyboardButton("🏢 Корпоративы", callback_data="service_corp"),
             types.InlineKeyboardButton("🎉 Частные мероприятия", callback_data="service_private")
+        )
+
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
         )
 
         bot.send_message(
@@ -106,6 +120,10 @@ def callbacks(call):
             )
         )
 
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
+
         bot.send_message(
             chat_id,
             f"{service}\n\n"
@@ -115,6 +133,11 @@ def callbacks(call):
         )
 
     elif call.data == "cocktails":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
 
         bot.send_message(
             chat_id,
@@ -136,24 +159,37 @@ def callbacks(call):
             "• Virgin Margarita\n"
             "• Virgin Negroni\n"
             "• Virgin Aperol Spritz\n"
-            "• Virgin Daiquiri"
+            "• Virgin Daiquiri",
+            reply_markup=kb
         )
 
     elif call.data == "wine":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
 
         bot.send_message(
             chat_id,
             "🍷 Винные мероприятия\n\n"
             "• Винные дегустации\n"
             "• Винное казино\n"
-            "• Подбор вина под формат мероприятия"
+            "• Подбор вина под формат мероприятия",
+            reply_markup=kb
         )
 
     elif call.data == "price":
 
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
+
         bot.send_message(
             chat_id,
-            "💰 Стоимость рассчитывается индивидуально под формат мероприятия и количество гостей."
+            "💰 Стоимость рассчитывается индивидуально под формат мероприятия и количество гостей.",
+            reply_markup=kb
         )
 
     elif call.data == "presentation":
@@ -171,25 +207,49 @@ def callbacks(call):
                 "📄 Презентация пока не загружена."
             )
 
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
+        bot.send_message(chat_id, "⬅️ Назад", reply_markup=kb)
+
     elif call.data == "works":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
 
         bot.send_message(
             chat_id,
-            "📸 Галерея находится в наполнении."
+            "📸 Галерея находится в наполнении.",
+            reply_markup=kb
         )
 
     elif call.data == "reviews":
 
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
+
         bot.send_message(
             chat_id,
-            "⭐ Раздел находится в наполнении."
+            "⭐ Раздел находится в наполнении.",
+            reply_markup=kb
         )
 
     elif call.data == "manager":
 
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
+        )
+
         bot.send_message(
             chat_id,
-            "📞 Менеджер:\n@justsayheron"
+            "📞 Менеджер:\n@justsayheron",
+            reply_markup=kb
         )
 
     elif call.data == "request":
