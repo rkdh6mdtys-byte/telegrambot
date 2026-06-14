@@ -37,10 +37,6 @@ def main_menu():
         types.InlineKeyboardButton("📞 Менеджер", callback_data="manager")
     )
 
-    kb.add(
-        types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
-    )
-
     return kb
 
 
