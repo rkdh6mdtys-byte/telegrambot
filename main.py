@@ -406,7 +406,10 @@ def main() -> None:
     
     # ConversationHandler для заявок
     conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(services, pattern='^services$')],
+        entry_points=[
+            CallbackQueryHandler(services, pattern='^services$'),
+            CallbackQueryHandler(services, pattern='^application$'),
+        ],
         states={
             CHOOSING_SERVICE: [CallbackQueryHandler(service_selected, pattern='^service_')],
             ENTERING_GUESTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, entering_guests)],
@@ -427,6 +430,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(pricing, pattern='^pricing$'))
     application.add_handler(CallbackQueryHandler(portfolio, pattern='^portfolio$'))
     application.add_handler(CallbackQueryHandler(reviews, pattern='^reviews$'))
+    application.add_handler(CallbackQueryHandler(services, pattern='^application$'))
     
     # Запуск
     application.run_polling()
