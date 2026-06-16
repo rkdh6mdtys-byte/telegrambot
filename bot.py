@@ -14,9 +14,33 @@ user_data = {}
 user_state = {}
 
 def save_to_sheets(name, date, guests, username, package):
-    # TODO: Fix Google Sheets credentials and re-enable this
-    print(f"⏸️ Google Sheets временно отключена. Заявка не сохранена: {name}")
-    return True
+    try:
+        # Load credentials from file
+        with open("GOOGLE_SHEETS_CREDENTIALS", "r") as f:
+            credentials_dict = json.load(f)
+        
+        # Authenticate with Google Sheets
+        from google.oauth2.service_account import Credentials
+        credentials = Credentials.from_service_account_info(
+            credentials_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        
+        # Open spreadsheet and append data
+        import gspread
+        gc = gspread.authorize(credentials)
+        spreadsheet = gc.open_by_key(SPREADSHEET_ID)
+        worksheet = spreadsheet.sheet1
+        
+        # Append new row with request data
+        worksheet.append_row([name, date, guests, username, package, datetime.now().isoformat()])
+        
+        print(f"✅ Заявка сохранена в Google Sheets: {name}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка при сохранении в Google Sheets: {e}")
+        return False
 
 def main_menu():
     kb = types.InlineKeyboardMarkup(row_width=2)
