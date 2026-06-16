@@ -130,14 +130,31 @@ def callbacks(call):
 
     elif call.data == "cocktails":
 
-        kb = types.InlineKeyboardMarkup()
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            types.InlineKeyboardButton("🍸 Классика", callback_data="cocktails_classic"),
+            types.InlineKeyboardButton("🍃 Безалкогольные", callback_data="cocktails_nonalc")
+        )
+
         kb.add(
             types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
         )
 
         bot.send_message(
             chat_id,
-            "🍹 Коктейльная карта\n\n"
+            "🍹 Коктейльная карта\n\nВыберите категорию:",
+            reply_markup=kb
+        )
+
+    elif call.data == "cocktails_classic":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="cocktails")
+        )
+
+        bot.send_message(
+            chat_id,
             "🍸 Классика:\n"
             "• Porn Star Martini\n"
             "• Clover Club\n"
@@ -150,7 +167,19 @@ def callbacks(call):
             "• Negroni\n"
             "• White Russian\n"
             "• Espresso Martini\n"
-            "• Paloma\n\n"
+            "• Paloma",
+            reply_markup=kb
+        )
+
+    elif call.data == "cocktails_nonalc":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="cocktails")
+        )
+
+        bot.send_message(
+            chat_id,
             "🍃 Безалкогольные:\n"
             "• Virgin Margarita\n"
             "• Virgin Negroni\n"
@@ -161,17 +190,65 @@ def callbacks(call):
 
     elif call.data == "wine":
 
-        kb = types.InlineKeyboardMarkup()
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            types.InlineKeyboardButton("🍷 Винные дегустации", callback_data="wine_tasting"),
+            types.InlineKeyboardButton("🎲 Винное казино", callback_data="wine_casino"),
+            types.InlineKeyboardButton("🍇 Подбор вина", callback_data="wine_selection")
+        )
+
         kb.add(
             types.InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
         )
 
         bot.send_message(
             chat_id,
-            "🍷 Винные мероприятия\n\n"
-            "• Винные дегустации\n"
-            "• Винное казино\n"
-            "• Подбор вина под формат мероприятия",
+            "🍷 Винные мероприятия\n\nВыберите интересующую услугу:",
+            reply_markup=kb
+        )
+
+    elif call.data == "wine_tasting":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="wine")
+        )
+
+        bot.send_message(
+            chat_id,
+            "🍷 Винные дегустации\n\n"
+            "Профессиональная дегустация вин с сомелье.\n"
+            "Подходит для корпоративов и частных мероприятий.",
+            reply_markup=kb
+        )
+
+    elif call.data == "wine_casino":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="wine")
+        )
+
+        bot.send_message(
+            chat_id,
+            "🎲 Винное казино\n\n"
+            "Интерактивная игра с винами и призами.\n"
+            "Развлечение для гостей вашего мероприятия.",
+            reply_markup=kb
+        )
+
+    elif call.data == "wine_selection":
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("⬅️ Назад", callback_data="wine")
+        )
+
+        bot.send_message(
+            chat_id,
+            "🍇 Подбор вина\n\n"
+            "Индивидуальный подбор вин под формат вашего мероприятия.\n"
+            "Консультация сомелье включена.",
             reply_markup=kb
         )
 
@@ -184,7 +261,24 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "💰 Стоимость рассчитывается индивидуально под формат мероприятия и количество гостей.",
+            "💰 Пакеты услуг\n\n"
+            "🟢 БАЗОВЫЙ ПАКЕТ - 65 000₽\n"
+            "• 1 профессиональный бармен\n"
+            "• До 30 человек\n"
+            "• 100 коктейлей\n"
+            "• 6-8 часов работы\n\n"
+            "🔵 СТАНДАРТНЫЙ ПАКЕТ - 100 000₽\n"
+            "• 1 профессиональный бармен\n"
+            "• До 100 человек\n"
+            "• 200 коктейлей\n"
+            "• 6-8 часов работы\n\n"
+            "🟣 ПРЕМИУМ ПАКЕТ - 125 000₽\n"
+            "• 2 профессиональных бармена\n"
+            "• 100+ человек\n"
+            "• 200+ коктейлей\n"
+            "• 4 вида настоек по 1л\n"
+            "• 6л лимонада\n"
+            "• 6-8 часов работы",
             reply_markup=kb
         )
 
@@ -304,9 +398,23 @@ def form_handler(message):
 
         bot.send_message(ADMIN_ID, text)
 
+        # Определяем пакет по количеству гостей
+        try:
+            guests_count = int(user_data[chat_id]['guests'])
+        except:
+            guests_count = 0
+
+        if guests_count <= 30:
+            package = "🟢 БАЗОВЫЙ ПАКЕТ - 65 000₽\n• 1 профессиональный бармен\n• До 30 человек\n• 100 коктейлей\n• 6-8 часов работы"
+        elif guests_count <= 100:
+            package = "🔵 СТАНДАРТНЫЙ ПАКЕТ - 100 000₽\n• 1 профессиональный бармен\n• До 100 человек\n• 200 коктейлей\n• 6-8 часов работы"
+        else:
+            package = "🟣 ПРЕМИУМ ПАКЕТ - 125 000₽\n• 2 профессиональных бармена\n• 100+ человек\n• 200+ коктейлей\n• 4 вида настоек по 1л\n• 6л лимонада\n• 6-8 часов работы"
+
         bot.send_message(
             chat_id,
-            "✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время.\n\n/start"
+            f"✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время.\n\n"
+            f"Рекомендуемый пакет для вас:\n\n{package}\n\n/start"
         )
 
         del user_state[chat_id]
