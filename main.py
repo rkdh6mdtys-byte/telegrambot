@@ -104,12 +104,9 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     menu_text = "Выберите раздел:"
     
     keyboard = [
-        [InlineKeyboardButton("🎯 Услуги", callback_data='services')],
-        [InlineKeyboardButton("🍹 Коктейльная карта", callback_data='cocktails')],
-        [InlineKeyboardButton("🎉 Винные мероприятия", callback_data='wine_events')],
-        [InlineKeyboardButton("💰 Стоимость", callback_data='pricing')],
-        [InlineKeyboardButton("📸 Наши работы", callback_data='portfolio')],
-        [InlineKeyboardButton("⭐ Отзывы", callback_data='reviews')],
+        [InlineKeyboardButton("🎯 Услуги", callback_data='services'), InlineKeyboardButton("🍹 Коктейльная карта", callback_data='cocktails')],
+        [InlineKeyboardButton("🎉 Винные мероприятия", callback_data='wine_events'), InlineKeyboardButton("💰 Стоимость", callback_data='pricing')],
+        [InlineKeyboardButton("📸 Наши работы", callback_data='portfolio'), InlineKeyboardButton("⭐ Отзывы", callback_data='reviews')],
         [InlineKeyboardButton("📝 Оставить заявку", callback_data='application')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
