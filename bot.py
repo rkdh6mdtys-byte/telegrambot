@@ -35,34 +35,9 @@ def get_sheets_client():
         return None
 
 def save_to_sheets(name, date, guests, username, package):
-    try:
-        client = get_sheets_client()
-        if not client:
-            return False
-        
-        sheet = client.open_by_key(SPREADSHEET_ID)
-        worksheet = sheet.sheet1
-        
-        # Проверяем, есть ли заголовки
-        if worksheet.cell(1, 1).value is None:
-            headers = ["Имя", "Дата", "Гостей", "Telegram", "Рекомендуемый пакет", "Дата заявки"]
-            worksheet.insert_row(headers, 1)
-        
-        # Добавляем новую строку
-        new_row = [
-            name,
-            date,
-            guests,
-            f"@{username}",
-            package,
-            datetime.now().strftime("%d.%m.%Y %H:%M")
-        ]
-        worksheet.append_row(new_row)
-        print(f"✅ Заявка сохранена в Google Sheets: {name}")
-        return True
-    except Exception as e:
-        print(f"❌ Ошибка при сохранении в Google Sheets: {e}")
-        return False
+    # TODO: Fix Google Sheets credentials and re-enable this
+    print(f"⏸️ Google Sheets временно отключена. Заявка не сохранена: {name}")
+    return True
 
 def main_menu():
     kb = types.InlineKeyboardMarkup(row_width=2)
