@@ -121,10 +121,8 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     services_text = "Выберите тип мероприятия:"
     
     keyboard = [
-        [InlineKeyboardButton("💒 Свадьба", callback_data='service_wedding')],
-        [InlineKeyboardButton("🏢 Корпоративы", callback_data='service_corporate')],
-        [InlineKeyboardButton("🎂 Частные мероприятия", callback_data='service_private')],
-        [InlineKeyboardButton("☕ Кофе-брейки", callback_data='service_coffee')],
+        [InlineKeyboardButton("💒 Свадьба", callback_data='service_wedding'), InlineKeyboardButton("🏢 Корпоративы", callback_data='service_corporate')],
+        [InlineKeyboardButton("🎂 Частные мероприятия", callback_data='service_private'), InlineKeyboardButton("☕ Кофе-брейки", callback_data='service_coffee')],
         [InlineKeyboardButton("⬅️ Назад", callback_data='menu')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -183,16 +181,19 @@ async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     packages_text = "Выберите пакет услуг:\n\n"
     
-    keyboard = []
+    package_keys = list(PACKAGES.keys())
     for key, package in PACKAGES.items():
         packages_text += f"<b>{package['name']}</b>\n"
         packages_text += f"Барменов: {package['barmen']}\n"
         packages_text += f"Гостей: {package['guests']}\n"
         packages_text += f"Коктейлей: {package['cocktails']}\n"
         packages_text += f"Цена: {package['price']}\n\n"
-        
-        keyboard.append([InlineKeyboardButton(package['name'], callback_data=f'package_{key}')])
-    
+
+    keyboard = []
+    buttons = [InlineKeyboardButton(PACKAGES[key]['name'], callback_data=f'package_{key}') for key in package_keys]
+    for i in range(0, len(buttons), 2):
+        keyboard.append(buttons[i:i + 2])
+
     keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data='menu')])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
