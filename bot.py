@@ -1,14 +1,68 @@
 import telebot
 from telebot import types
+import gspread
+from google.oauth2.service_account import Credentials
+import json
+import os
+from datetime import datetime
 
 TOKEN = "8717077678:AAHI7-puYr1ucjLwzBzwHmEr16pQeDCTPlU"
 ADMIN_ID = 6133417158
+SPREADSHEET_ID = "1ayVDaEaArcZQ_NtfuDO0TydlZYI4U2nuTbfldVvX76A"
 
 bot = telebot.TeleBot(TOKEN)
 
 user_data = {}
 user_state = {}
 
+# Google Sheets setup
+def get_sheets_client():
+    try:
+        creds_json = os.getenv("GOOGLE_SHEETS_CREDENTIALS")
+        if not creds_json:
+            print("⚠️ GOOGLE_SHEETS_CREDENTIALS не установлена")
+            return None
+        
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        client = gspread.authorize(creds)
+        return client
+    except Exception as e:
+        print(f"❌ Ошибка подключения к Google Sheets: {e}")
+        return None
+
+def save_to_sheets(name, date, guests, username, package):
+    try:
+        client = get_sheets_client()
+        if not client:
+            return False
+        
+        sheet = client.open_by_key(SPREADSHEET_ID)
+        worksheet = sheet.sheet1
+        
+        # Проверяем, есть ли заголовки
+        if worksheet.cell(1, 1).value is None:
+            headers = ["Имя", "Дата", "Гостей", "Telegram", "Рекомендуемый пакет", "Дата заявки"]
+            worksheet.insert_row(headers, 1)
+        
+        # Добавляем новую строку
+        new_row = [
+            name,
+            date,
+            guests,
+            f"@{username}",
+            package,
+            datetime.now().strftime("%d.%m.%Y %H:%M")
+        ]
+        worksheet.append_row(new_row)
+        print(f"✅ Заявка сохранена в Google Sheets: {name}")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка при сохранении в Google Sheets: {e}")
+        return False
 
 def main_menu():
     kb = types.InlineKeyboardMarkup(row_width=2)
@@ -47,12 +101,12 @@ def start(message):
     kb.add(types.InlineKeyboardButton("🚀 Открыть меню", callback_data="menu"))
 
     text = (
-        "🌊 ВОЛНЫ\n\n"
-        "Коктейльный сервис и вино\n\n"
-        "🍸 Авторские коктейли\n"
-        "🍷 Винные дегустации\n"
-        "🎲 Винное казино\n\n"
-        "📍 Владивосток\n\n"
+        "🌊 ВОЛНЫ\\n\\n"
+        "Коктейльный сервис и вино\\n\\n"
+        "🍸 Авторские коктейли\\n"
+        "🍷 Винные дегустации\\n"
+        "🎲 Винное казино\\n\\n"
+        "📍 Владивосток\\n\\n"
         "Нажмите кнопку ниже."
     )
 
@@ -122,8 +176,8 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            f"{service}\n\n"
-            "Мы подготовим барную концепцию под ваше мероприятие.\n\n"
+            f"{service}\\n\\n"
+            "Мы подготовим барную концепцию под ваше мероприятие.\\n\\n"
             "Нажмите кнопку ниже для расчёта.",
             reply_markup=kb
         )
@@ -142,7 +196,7 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "🍹 Коктейльная карта\n\nВыберите категорию:",
+            "🍹 Коктейльная карта\\n\\nВыберите категорию:",
             reply_markup=kb
         )
 
@@ -155,18 +209,18 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "🍸 Классика:\n"
-            "• Porn Star Martini\n"
-            "• Clover Club\n"
-            "• Bramble\n"
-            "• New York Sour\n"
-            "• Whiskey Sour\n"
-            "• Aperol Spritz\n"
-            "• Daiquiri\n"
-            "• Margarita\n"
-            "• Negroni\n"
-            "• White Russian\n"
-            "• Espresso Martini\n"
+            "🍸 Классика:\\n"
+            "• Porn Star Martini\\n"
+            "• Clover Club\\n"
+            "• Bramble\\n"
+            "• New York Sour\\n"
+            "• Whiskey Sour\\n"
+            "• Aperol Spritz\\n"
+            "• Daiquiri\\n"
+            "• Margarita\\n"
+            "• Negroni\\n"
+            "• White Russian\\n"
+            "• Espresso Martini\\n"
             "• Paloma",
             reply_markup=kb
         )
@@ -180,10 +234,10 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "🍃 Безалкогольные:\n"
-            "• Virgin Margarita\n"
-            "• Virgin Negroni\n"
-            "• Virgin Aperol Spritz\n"
+            "🍃 Безалкогольные:\\n"
+            "• Virgin Margarita\\n"
+            "• Virgin Negroni\\n"
+            "• Virgin Aperol Spritz\\n"
             "• Virgin Daiquiri",
             reply_markup=kb
         )
@@ -203,7 +257,7 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "🍷 Винные мероприятия\n\nВыберите интересующую услугу:",
+            "🍷 Винные мероприятия\\n\\nВыберите интересующую услугу:",
             reply_markup=kb
         )
 
@@ -216,8 +270,8 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "🍷 Винные дегустации\n\n"
-            "Профессиональная дегустация вин с сомелье.\n"
+            "🍷 Винные дегустации\\n\\n"
+            "Профессиональная дегустация вин с сомелье.\\n"
             "Подходит для корпоративов и частных мероприятий.",
             reply_markup=kb
         )
@@ -231,8 +285,8 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "🎲 Винное казино\n\n"
-            "Интерактивная игра с винами и призами.\n"
+            "🎲 Винное казино\\n\\n"
+            "Интерактивная игра с винами и призами.\\n"
             "Развлечение для гостей вашего мероприятия.",
             reply_markup=kb
         )
@@ -246,8 +300,8 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "🍇 Подбор вина\n\n"
-            "Индивидуальный подбор вин под формат вашего мероприятия.\n"
+            "🍇 Подбор вина\\n\\n"
+            "Индивидуальный подбор вин под формат вашего мероприятия.\\n"
             "Консультация сомелье включена.",
             reply_markup=kb
         )
@@ -261,23 +315,23 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "💰 Пакеты услуг\n\n"
-            "🟢 БАЗОВЫЙ ПАКЕТ - 65 000₽\n"
-            "• 1 профессиональный бармен\n"
-            "• До 30 человек\n"
-            "• 100 коктейлей\n"
-            "• 6-8 часов работы\n\n"
-            "🔵 СТАНДАРТНЫЙ ПАКЕТ - 100 000₽\n"
-            "• 1 профессиональный бармен\n"
-            "• До 100 человек\n"
-            "• 200 коктейлей\n"
-            "• 6-8 часов работы\n\n"
-            "🟣 ПРЕМИУМ ПАКЕТ - 125 000₽\n"
-            "• 2 профессиональных бармена\n"
-            "• 100+ человек\n"
-            "• 200+ коктейлей\n"
-            "• 4 вида настоек по 1л\n"
-            "• 6л лимонада\n"
+            "💰 Пакеты услуг\\n\\n"
+            "🟢 БАЗОВЫЙ ПАКЕТ - 65 000₽\\n"
+            "• 1 профессиональный бармен\\n"
+            "• До 30 человек\\n"
+            "• 100 коктейлей\\n"
+            "• 6-8 часов работы\\n\\n"
+            "🔵 СТАНДАРТНЫЙ ПАКЕТ - 100 000₽\\n"
+            "• 1 профессиональный бармен\\n"
+            "• До 100 человек\\n"
+            "• 200 коктейлей\\n"
+            "• 6-8 часов работы\\n\\n"
+            "🟣 ПРЕМИУМ ПАКЕТ - 125 000₽\\n"
+            "• 2 профессиональных бармена\\n"
+            "• 100+ человек\\n"
+            "• 200+ коктейлей\\n"
+            "• 4 вида настоек по 1л\\n"
+            "• 6л лимонада\\n"
             "• 6-8 часов работы",
             reply_markup=kb
         )
@@ -337,7 +391,7 @@ def callbacks(call):
 
         bot.send_message(
             chat_id,
-            "📞 Менеджер:\n@justsayheron",
+            "📞 Менеджер:\\n@justsayheron",
             reply_markup=kb
         )
 
@@ -388,16 +442,6 @@ def form_handler(message):
 
         username = message.from_user.username or "нет username"
 
-        text = (
-            "🚨 НОВАЯ ЗАЯВКА\n\n"
-            f"👤 Имя: {user_data[chat_id]['name']}\n"
-            f"📅 Дата: {user_data[chat_id]['date']}\n"
-            f"👥 Гостей: {user_data[chat_id]['guests']}\n"
-            f"💬 Telegram: @{username}"
-        )
-
-        bot.send_message(ADMIN_ID, text)
-
         # Определяем пакет по количеству гостей
         try:
             guests_count = int(user_data[chat_id]['guests'])
@@ -405,16 +449,37 @@ def form_handler(message):
             guests_count = 0
 
         if guests_count <= 30:
-            package = "🟢 БАЗОВЫЙ ПАКЕТ - 65 000₽\n• 1 профессиональный бармен\n• До 30 человек\n• 100 коктейлей\n• 6-8 часов работы"
+            package = "🟢 БАЗОВЫЙ ПАКЕТ - 65 000₽"
         elif guests_count <= 100:
-            package = "🔵 СТАНДАРТНЫЙ ПАКЕТ - 100 000₽\n• 1 профессиональный бармен\n• До 100 человек\n• 200 коктейлей\n• 6-8 часов работы"
+            package = "🔵 СТАНДАРТНЫЙ ПАКЕТ - 100 000₽"
         else:
-            package = "🟣 ПРЕМИУМ ПАКЕТ - 125 000₽\n• 2 профессиональных бармена\n• 100+ человек\n• 200+ коктейлей\n• 4 вида настоек по 1л\n• 6л лимонада\n• 6-8 часов работы"
+            package = "🟣 ПРЕМИУМ ПАКЕТ - 125 000₽"
+
+        # Отправляем заявку админу в Telegram
+        text = (
+            "🚨 НОВАЯ ЗАЯВКА\\n\\n"
+            f"👤 Имя: {user_data[chat_id]['name']}\\n"
+            f"📅 Дата: {user_data[chat_id]['date']}\\n"
+            f"👥 Гостей: {user_data[chat_id]['guests']}\\n"
+            f"💬 Telegram: @{username}\\n"
+            f"📦 Рекомендуемый пакет: {package}"
+        )
+
+        bot.send_message(ADMIN_ID, text)
+
+        # Сохраняем в Google Sheets
+        save_to_sheets(
+            user_data[chat_id]['name'],
+            user_data[chat_id]['date'],
+            user_data[chat_id]['guests'],
+            username,
+            package
+        )
 
         bot.send_message(
             chat_id,
-            f"✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время.\n\n"
-            f"Рекомендуемый пакет для вас:\n\n{package}\n\n/start"
+            f"✅ Заявка отправлена. Мы свяжемся с вами в ближайшее время.\\n\\n"
+            f"Рекомендуемый пакет для вас:\\n{package}\\n\\n/start"
         )
 
         del user_state[chat_id]
