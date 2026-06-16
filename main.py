@@ -20,28 +20,89 @@ ADMIN_ID = 6133417158 # Замени на свой ID
 
 # Пакеты услуг
 PACKAGES = {
-    'standard_30': {
-        'name': 'Стандарт (30 человек)',
+    'standard': {
+        'name': '🥂 Стандарт',
         'barmen': 1,
         'guests': 30,
         'cocktails': 100,
-        'price': '15000 ₽'
+        'price': '65 000 ₽',
+        'description': (
+            '👤 <b>1 профессиональный бармен</b>\n'
+            '👥 До <b>30 гостей</b>\n'
+            '🍹 <b>100 коктейлей</b>\n'
+            '💰 Стоимость: <b>65 000 ₽</b>\n\n'
+            'Идеальный выбор для небольших мероприятий — дней рождения, '
+            'камерных вечеринок и корпоративов в узком кругу. '
+            'Бармен приедет с полным оборудованием и всеми ингредиентами.'
+        )
     },
-    'standard_100': {
-        'name': 'Стандарт (100 человек)',
+    'business': {
+        'name': '💼 Бизнес',
         'barmen': 1,
         'guests': 100,
         'cocktails': 200,
-        'price': '35000 ₽'
+        'price': '100 000 ₽',
+        'description': (
+            '👤 <b>1 профессиональный бармен</b>\n'
+            '👥 До <b>100 гостей</b>\n'
+            '🍹 <b>200 коктейлей</b>\n'
+            '💰 Стоимость: <b>100 000 ₽</b>\n\n'
+            'Оптимальное решение для средних мероприятий — свадеб, '
+            'корпоративов и частных праздников. Расширенное меню коктейлей '
+            'и профессиональное обслуживание на весь вечер.'
+        )
     },
     'premium': {
-        'name': 'Премиум (100+ человек)',
+        'name': '👑 Премиум',
         'barmen': 2,
         'guests': '100+',
         'cocktails': '200+',
-        'tinctures': '4 вида по 1л',
-        'lemonade': 'лимонад',
-        'price': '60000 ₽'
+        'tinctures': '4 вида настойки по 1 л',
+        'lemonade': '6 л фирменного лимонада',
+        'price': '125 000 ₽',
+        'description': (
+            '👥 <b>2 профессиональных бармена</b>\n'
+            '🎉 <b>100+ гостей</b>\n'
+            '🍹 <b>200+ коктейлей</b>\n'
+            '🍶 <b>4 вида авторской настойки по 1 л</b>\n'
+            '🍋 <b>6 л фирменного лимонада</b>\n'
+            '💰 Стоимость: <b>125 000 ₽</b>\n\n'
+            'Максимальный уровень сервиса для масштабных мероприятий. '
+            'Два бармена, авторские настойки собственного производства, '
+            'фирменный лимонад и расширенное меню — ваши гости запомнят этот вечер навсегда.'
+        )
+    }
+}
+
+# Пакеты кофе-брейков
+COFFEE_PACKAGES = {
+    'coffee_standard': {
+        'name': '☕ Стандарт',
+        'description': (
+            '☕ <b>Кофе-брейк «Стандарт»</b>\n\n'
+            '• Профессиональный бариста\n'
+            '• Эспрессо, американо, капучино, латте\n'
+            '• До 50 порций\n'
+            '• Оборудование и расходники включены\n'
+            '• Продолжительность: до 2 часов\n\n'
+            '💰 Стоимость рассчитывается индивидуально\n\n'
+            '<i>Подходит для деловых встреч, конференций и небольших корпоративных мероприятий.</i>'
+        )
+    },
+    'coffee_premium': {
+        'name': '✨ Премиум',
+        'description': (
+            '✨ <b>Кофе-брейк «Премиум»</b>\n\n'
+            '• 2 профессиональных бариста\n'
+            '• Полное меню кофейных напитков + авторские позиции\n'
+            '• Безлимитное количество порций\n'
+            '• Фирменные сиропы и топпинги\n'
+            '• Чайная станция в комплекте\n'
+            '• Оборудование премиум-класса\n'
+            '• Продолжительность: до 4 часов\n\n'
+            '💰 Стоимость рассчитывается индивидуально\n\n'
+            '<i>Идеально для крупных форумов, выставок и представительских мероприятий.</i>'
+        )
     }
 }
 
@@ -134,16 +195,30 @@ async def service_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Выбран тип услуги"""
     query = update.callback_query
     await query.answer()
-    
+
+    # Кофе-брейки идут в отдельный поток
+    if query.data == 'service_coffee':
+        text = "☕ <b>КОФЕ-БРЕЙКИ</b>\n\nВыберите пакет:"
+        keyboard = [
+            [
+                InlineKeyboardButton(COFFEE_PACKAGES['coffee_standard']['name'], callback_data='coffee_pkg_standard'),
+                InlineKeyboardButton(COFFEE_PACKAGES['coffee_premium']['name'], callback_data='coffee_pkg_premium'),
+            ],
+            [InlineKeyboardButton("⬅️ Назад к услугам", callback_data='services')],
+            [InlineKeyboardButton("🏠 В главное меню", callback_data='menu')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        return CHOOSING_SERVICE
+
     service_map = {
         'service_wedding': '💒 Свадьба',
         'service_corporate': '🏢 Корпоративы',
         'service_private': '🎂 Частные мероприятия',
-        'service_coffee': '☕ Кофе-брейки'
     }
-    
+
     context.user_data['service'] = service_map.get(query.data, 'Услуга')
-    
+
     await query.edit_message_text(
         f"Вы выбрали: {context.user_data['service']}\n\nСколько гостей будет на мероприятии?"
     )
@@ -178,42 +253,80 @@ async def entering_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод телефона и выбор пакета"""
     context.user_data['phone'] = update.message.text
-    
-    packages_text = "Выберите пакет услуг:\n\n"
-    
-    package_keys = list(PACKAGES.keys())
-    for key, package in PACKAGES.items():
-        packages_text += f"<b>{package['name']}</b>\n"
-        packages_text += f"Барменов: {package['barmen']}\n"
-        packages_text += f"Гостей: {package['guests']}\n"
-        packages_text += f"Коктейлей: {package['cocktails']}\n"
-        packages_text += f"Цена: {package['price']}\n\n"
 
-    keyboard = []
-    buttons = [InlineKeyboardButton(PACKAGES[key]['name'], callback_data=f'package_{key}') for key in package_keys]
-    for i in range(0, len(buttons), 2):
-        keyboard.append(buttons[i:i + 2])
+    packages_text = "🎁 <b>Выберите пакет услуг:</b>\n\nНажмите на пакет, чтобы узнать подробности."
 
-    keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data='menu')])
+    keyboard = [
+        [
+            InlineKeyboardButton(PACKAGES['standard']['name'], callback_data='pkg_detail_standard'),
+            InlineKeyboardButton(PACKAGES['business']['name'], callback_data='pkg_detail_business'),
+        ],
+        [InlineKeyboardButton(PACKAGES['premium']['name'], callback_data='pkg_detail_premium')],
+        [InlineKeyboardButton("⬅️ В главное меню", callback_data='menu')],
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await update.message.reply_text(packages_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     return CHOOSING_PACKAGE
 
-async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Пакет выбран, заявка готова"""
+async def package_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Показать детали выбранного пакета с кнопкой подачи заявки"""
     query = update.callback_query
     await query.answer()
-    
+
+    package_key = query.data.replace('pkg_detail_', '')
+    package = PACKAGES.get(package_key)
+
+    if not package:
+        await query.edit_message_text("Ошибка. Попробуйте снова.")
+        return CHOOSING_PACKAGE
+
+    text = f"🎁 <b>Пакет {package['name']}</b>\n\n{package['description']}"
+
+    keyboard = [
+        [InlineKeyboardButton("📝 Подать заявку", callback_data=f'package_{package_key}')],
+        [InlineKeyboardButton("⬅️ Назад к пакетам", callback_data='back_to_packages')],
+        [InlineKeyboardButton("🏠 В главное меню", callback_data='menu')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    return CHOOSING_PACKAGE
+
+async def back_to_packages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Вернуться к выбору пакета"""
+    query = update.callback_query
+    await query.answer()
+
+    packages_text = "🎁 <b>Выберите пакет услуг:</b>\n\nНажмите на пакет, чтобы узнать подробности."
+
+    keyboard = [
+        [
+            InlineKeyboardButton(PACKAGES['standard']['name'], callback_data='pkg_detail_standard'),
+            InlineKeyboardButton(PACKAGES['business']['name'], callback_data='pkg_detail_business'),
+        ],
+        [InlineKeyboardButton(PACKAGES['premium']['name'], callback_data='pkg_detail_premium')],
+        [InlineKeyboardButton("⬅️ В главное меню", callback_data='menu')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(packages_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    return CHOOSING_PACKAGE
+
+async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Пакет выбран — отправить заявку"""
+    query = update.callback_query
+    await query.answer()
+
     package_key = query.data.replace('package_', '')
     package = PACKAGES.get(package_key)
-    
+
     if not package:
         await query.edit_message_text("Ошибка при выборе пакета. Попробуйте снова.")
         return ConversationHandler.END
-    
+
     context.user_data['package'] = package
-    
+
     # Формируем заявку
     application_text = f"""
 <b>📋 НОВАЯ ЗАЯВКА</b>
@@ -231,7 +344,7 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 <b>Время заявки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}
 """
-    
+
     # Отправляем заявку администратору
     try:
         await context.bot.send_message(
@@ -241,7 +354,7 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
     except Exception as e:
         logger.error(f"Ошибка при отправке заявки: {e}")
-    
+
     # Подтверждение пользователю
     confirmation_text = f"""✅ <b>Спасибо за заявку!</b>
 
@@ -254,51 +367,187 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 <b>Пакет:</b> {package['name']}
 <b>Цена:</b> {package['price']}
 
-Менеджер свяжется с вами в ближайшее время!
+Менеджер свяжется с вами в ближайшее время! 🙌
 """
-    
-    keyboard = [[InlineKeyboardButton("В главное меню", callback_data='menu')]]
+
+    keyboard = [[InlineKeyboardButton("🏠 В главное меню", callback_data='menu')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await query.edit_message_text(confirmation_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
-    
+
     return ConversationHandler.END
 
 async def cocktails(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Коктейльная карта"""
+    """Главное меню коктейльной карты"""
     query = update.callback_query
     await query.answer()
-    
-    cocktails_text = """🍹 <b>КОКТЕЙЛЬНАЯ КАРТА</b>
 
-<b>Классические коктейли:</b>
+    text = "🍹 <b>КОКТЕЙЛЬНАЯ КАРТА</b>\n\nВыберите раздел:"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🍸 Коктейли", callback_data='cocktails_alcoholic'),
+            InlineKeyboardButton("🥤 Безалкогольные", callback_data='cocktails_nonalcoholic'),
+        ],
+        [InlineKeyboardButton("🎭 Презентация", callback_data='cocktails_presentation')],
+        [InlineKeyboardButton("⬅️ Назад", callback_data='menu')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def cocktails_alcoholic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раздел коктейлей"""
+    query = update.callback_query
+    await query.answer()
+
+    text = """🍸 <b>КОКТЕЙЛИ</b>
+
 • Маргарита
 • Мохито
 • Дайкири
 • Космополитен
+• Негрони
+• Апероль Шприц
+• Гимлет
+• Олд Фэшн
+• Манхэттен
+• Мартини
+• Пина Колада
+• Кайпиринья
+• Кровавая Мэри
+• Виски Сауэр
+• Сазерак
+• Сайдкар
+• Корпс Ривайвер
+• Вью Карре
+• Клевер Клаб
+• Авиация
+• Бетвин зе Шитс
+• Французский 75"""
 
-<b>Авторские коктейли:</b>
-• Владивостокский закат
-• Волна удачи
-• Морской бриз
-• Тихоокеанский рай
-
-<b>Безалкогольные:</b>
-• Мокито
-• Лимонад
-• Фруктовый микс
-"""
-    
-    keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='menu')]]
+    keyboard = [
+        [InlineKeyboardButton("⬅️ К разделам карты", callback_data='cocktails')],
+        [InlineKeyboardButton("🏠 В главное меню", callback_data='menu')],
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(cocktails_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def cocktails_nonalcoholic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раздел безалкогольных напитков"""
+    query = update.callback_query
+    await query.answer()
+
+    text = """🥤 <b>БЕЗАЛКОГОЛЬНЫЕ</b>
+
+Все напитки — безалкогольные версии классических коктейлей, приготовленные с тем же вниманием к деталям:
+
+• Негрони
+• Апероль Шприц
+• Дайкири
+• Гимлет
+• Мохито
+• Нью-Йорк Сауэр
+• Виски Сауэр"""
+
+    keyboard = [
+        [InlineKeyboardButton("⬅️ К разделам карты", callback_data='cocktails')],
+        [InlineKeyboardButton("🏠 В главное меню", callback_data='menu')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def cocktails_presentation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раздел презентации"""
+    query = update.callback_query
+    await query.answer()
+
+    text = """🎭 <b>ПРЕЗЕНТАЦИЯ</b>
+
+Информация о презентации появится совсем скоро.
+
+Следите за обновлениями! 🌊"""
+
+    keyboard = [
+        [InlineKeyboardButton("⬅️ К разделам карты", callback_data='cocktails')],
+        [InlineKeyboardButton("🏠 В главное меню", callback_data='menu')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def coffee_package_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Детали пакета кофе-брейка"""
+    query = update.callback_query
+    await query.answer()
+
+    pkg_key = 'coffee_standard' if query.data == 'coffee_pkg_standard' else 'coffee_premium'
+    package = COFFEE_PACKAGES[pkg_key]
+
+    keyboard = [
+        [InlineKeyboardButton("📝 Подать заявку", callback_data=f'coffee_apply_{pkg_key}')],
+        [InlineKeyboardButton("📞 Связаться с менеджером", url='https://t.me/volny_vl')],
+        [InlineKeyboardButton("⬅️ Назад к кофе-брейкам", callback_data='service_coffee')],
+        [InlineKeyboardButton("🏠 В главное меню", callback_data='menu')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(package['description'], reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    return CHOOSING_SERVICE
+
+async def coffee_apply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Подача заявки на кофе-брейк"""
+    query = update.callback_query
+    await query.answer()
+
+    pkg_key = query.data.replace('coffee_apply_', '')
+    package = COFFEE_PACKAGES.get(pkg_key)
+
+    if not package:
+        await query.edit_message_text("Ошибка. Попробуйте снова.")
+        return CHOOSING_SERVICE
+
+    context.user_data['service'] = f"☕ Кофе-брейк {package['name']}"
+    context.user_data['coffee_package'] = package['name']
+
+    application_text = f"""
+<b>📋 НОВАЯ ЗАЯВКА — КОФЕ-БРЕЙК</b>
+
+<b>Пакет:</b> {package['name']}
+<b>Время заявки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}
+
+<i>Клиент запросил обратный звонок через бота.</i>
+"""
+
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=application_text,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке заявки кофе-брейк: {e}")
+
+    confirmation_text = f"""✅ <b>Заявка принята!</b>
+
+Вы выбрали: <b>{package['name']}</b>
+
+Менеджер свяжется с вами в ближайшее время для уточнения деталей и расчёта стоимости. 🙌
+"""
+
+    keyboard = [[InlineKeyboardButton("🏠 В главное меню", callback_data='menu')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(confirmation_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    return ConversationHandler.END
 
 async def wine_events(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Винные мероприятия"""
     query = update.callback_query
     await query.answer()
-    
+
     wine_text = """🍷 <b>ВИННЫЕ МЕРОПРИЯТИЯ</b>
 
 <b>Винные дегустации:</b>
@@ -312,42 +561,48 @@ async def wine_events(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 Все мероприятия проводятся профессионалами с опытом!
 """
-    
+
     keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='menu')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await query.edit_message_text(wine_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 async def pricing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Стоимость"""
     query = update.callback_query
     await query.answer()
-    
+
     pricing_text = """💰 <b>СТОИМОСТЬ УСЛУГ</b>
 
-<b>Пакет "Стандарт" (30 человек)</b>
+<b>🥂 Стандарт</b>
 • 1 профессиональный бармен
+• До 30 гостей
 • 100 коктейлей
-• Цена: 15 000 ₽
+• Цена: <b>65 000 ₽</b>
 
-<b>Пакет "Стандарт" (100 человек)</b>
+<b>💼 Бизнес</b>
 • 1 профессиональный бармен
+• До 100 гостей
 • 200 коктейлей
-• Цена: 35 000 ₽
+• Цена: <b>100 000 ₽</b>
 
-<b>Пакет "Премиум" (100+ человек)</b>
-• 2 профессиональных барменов
+<b>👑 Премиум</b>
+• 2 профессиональных бармена
+• 100+ гостей
 • 200+ коктейлей
-• 4 вида настойки по 1л
-• Лимонад
-• Цена: 60 000 ₽
+• 4 вида авторской настойки по 1 л
+• 6 л фирменного лимонада
+• Цена: <b>125 000 ₽</b>
 
-<i>Цены указаны без учета доставки. Точная стоимость рассчитывается индивидуально.</i>
+<i>Точная стоимость рассчитывается индивидуально. Свяжитесь с нами для консультации.</i>
 """
-    
-    keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='menu')]]
+
+    keyboard = [
+        [InlineKeyboardButton("📝 Оставить заявку", callback_data='application')],
+        [InlineKeyboardButton("⬅️ Назад", callback_data='menu')],
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await query.edit_message_text(pricing_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -394,16 +649,17 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Операция отменена. Введите /start для начала.")
     return ConversationHandler.END
 
+
 def main() -> None:
     """Запуск бота"""
     # Получаем токен из переменной окружения
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN не установлен!")
-    
+
     # Создаем приложение
     application = Application.builder().token(token).build()
-    
+
     # ConversationHandler для заявок
     conv_handler = ConversationHandler(
         entry_points=[
@@ -411,27 +667,41 @@ def main() -> None:
             CallbackQueryHandler(services, pattern='^application$'),
         ],
         states={
-            CHOOSING_SERVICE: [CallbackQueryHandler(service_selected, pattern='^service_')],
+            CHOOSING_SERVICE: [
+                CallbackQueryHandler(service_selected, pattern='^service_'),
+                CallbackQueryHandler(coffee_package_detail, pattern='^coffee_pkg_'),
+                CallbackQueryHandler(coffee_apply, pattern='^coffee_apply_'),
+                CallbackQueryHandler(services, pattern='^services$'),
+            ],
             ENTERING_GUESTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, entering_guests)],
             ENTERING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, entering_name)],
             ENTERING_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, entering_date)],
             ENTERING_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, entering_phone)],
-            CHOOSING_PACKAGE: [CallbackQueryHandler(package_selected, pattern='^package_')]
+            CHOOSING_PACKAGE: [
+                CallbackQueryHandler(package_detail, pattern='^pkg_detail_'),
+                CallbackQueryHandler(package_selected, pattern='^package_'),
+                CallbackQueryHandler(back_to_packages, pattern='^back_to_packages$'),
+            ],
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[
+            CommandHandler('cancel', cancel),
+            CallbackQueryHandler(menu, pattern='^menu$'),
+        ],
     )
-    
+
     # Обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(menu, pattern='^menu$'))
     application.add_handler(conv_handler)
     application.add_handler(CallbackQueryHandler(cocktails, pattern='^cocktails$'))
+    application.add_handler(CallbackQueryHandler(cocktails_alcoholic, pattern='^cocktails_alcoholic$'))
+    application.add_handler(CallbackQueryHandler(cocktails_nonalcoholic, pattern='^cocktails_nonalcoholic$'))
+    application.add_handler(CallbackQueryHandler(cocktails_presentation, pattern='^cocktails_presentation$'))
     application.add_handler(CallbackQueryHandler(wine_events, pattern='^wine_events$'))
     application.add_handler(CallbackQueryHandler(pricing, pattern='^pricing$'))
     application.add_handler(CallbackQueryHandler(portfolio, pattern='^portfolio$'))
     application.add_handler(CallbackQueryHandler(reviews, pattern='^reviews$'))
-    application.add_handler(CallbackQueryHandler(services, pattern='^application$'))
-    
+
     # Запуск
     application.run_polling()
 
