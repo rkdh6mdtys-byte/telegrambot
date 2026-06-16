@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 CHOOSING_SERVICE, ENTERING_GUESTS, ENTERING_NAME, ENTERING_DATE, ENTERING_PHONE, CHOOSING_PACKAGE = range(6)
 
 # ID администратора (замени на свой Telegram ID)
-ADMIN_ID = 123456789  # Замени на свой ID
+ADMIN_ID = 6133417158 # Замени на свой ID
 
 # Пакеты услуг
 PACKAGES = {
