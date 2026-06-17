@@ -1,4 +1,5 @@
 import logging
+import aiohttp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -28,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 # ID администратора
 ADMIN_ID = 6133417158
+
+# URL внешнего API для сохранения заявок
+APPLICATIONS_API_URL = os.getenv(
+    'APPLICATIONS_API_URL',
+    'https://applications-api.railway.app/api/applications',
+)
 
 # ─── Пакеты услуг ─────────────────────────────────────────────────────────────
 PACKAGES = {
@@ -343,7 +350,34 @@ async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.error(f"Ошибка при отправке заявки администратору: {e}")
 
+    # Отправка заявки во внешний API
+    api_payload = {
+        'name':    context.user_data.get('name', ''),
+        'phone':   context.user_data.get('phone', ''),
+        'service': context.user_data.get('service', ''),
+        'guests':  context.user_data.get('guests', ''),
+        'date':    context.user_data.get('date', ''),
+        'package': package['name'],
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                APPLICATIONS_API_URL,
+                json=api_payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status in (200, 201):
+                    logger.info(f"Заявка успешно отправлена в API (статус {resp.status})")
+                else:
+                    body = await resp.text()
+                    logger.warning(
+                        f"API вернул неожиданный статус {resp.status}: {body}"
+                    )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке заявки в API: {e}")
+
     # Подтверждение пользователю
+
     confirm_text = (
         "✅ <b>Спасибо за заявку!</b>\n\n"
         f"<b>Услуга:</b> {context.user_data.get('service', '—')}\n"
