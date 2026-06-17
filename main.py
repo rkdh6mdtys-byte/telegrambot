@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import os
 from datetime import datetime
 
 import aiohttp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -16,6 +18,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Глобальный флаг для предотвращения дублирования polling
+_polling_started = False
 
 # ─── Состояния ConversationHandler ───────────────────────────────────────────
 (
@@ -784,19 +789,32 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 # ─── Запуск ───────────────────────────────────────────────────────────────────
-def main() -> None:
-    """Запуск бота."""
+async def run_bot() -> None:
+    """Инициализация и запуск бота с защитой от дублирования polling."""
+    global _polling_started
+
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN не установлен!")
 
-    application = Application.builder().token(token).build()
+    if _polling_started:
+        logger.warning("Попытка запустить второй экземпляр polling — игнорируется.")
+        return
+    _polling_started = True
+
+    application = (
+        Application.builder()
+        .token(token)
+        .build()
+    )
 
     # ConversationHandler для заявок
     conv_handler = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(services,           pattern='^services$'),
-            CallbackQueryHandler(application_direct, pattern='^application$'),
+            CallbackQueryHandler(services,           pattern='^services
+),
+            CallbackQueryHandler(application_direct, pattern='^application
+),
         ],
         states={
             CHOOSING_SERVICE: [
@@ -810,7 +828,8 @@ def main() -> None:
             ],
             CONFIRMING_PACKAGE: [
                 CallbackQueryHandler(confirm_package,  pattern='^confirm_package_'),
-                CallbackQueryHandler(change_package,   pattern='^change_package$'),
+                CallbackQueryHandler(change_package,   pattern='^change_package
+),
             ],
             CHOOSING_PACKAGE_MANUAL: [
                 CallbackQueryHandler(manual_package_selected, pattern='^manual_package_'),
@@ -828,26 +847,98 @@ def main() -> None:
 
     # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(menu, pattern='^menu$'))
+    application.add_handler(CallbackQueryHandler(menu, pattern='^menu
+))
     application.add_handler(conv_handler)
 
     # Информационные разделы (вне диалога)
-    application.add_handler(CallbackQueryHandler(cocktails,              pattern='^cocktails$'))
-    application.add_handler(CallbackQueryHandler(cocktails_alcoholic,    pattern='^cocktails_alcoholic$'))
-    application.add_handler(CallbackQueryHandler(cocktails_nonalcoholic, pattern='^cocktails_nonalcoholic$'))
-    application.add_handler(CallbackQueryHandler(cocktails_presentation, pattern='^cocktails_presentation$'))
-    application.add_handler(CallbackQueryHandler(wine_events,            pattern='^wine_events$'))
-    application.add_handler(CallbackQueryHandler(wine_tasting,           pattern='^wine_tasting$'))
-    application.add_handler(CallbackQueryHandler(wine_casino,            pattern='^wine_casino$'))
-    application.add_handler(CallbackQueryHandler(wine_pairing,           pattern='^wine_pairing$'))
-    application.add_handler(CallbackQueryHandler(pricing,                pattern='^pricing$'))
-    application.add_handler(CallbackQueryHandler(pricing_detail,         pattern='^pricing_(basic|standard|premium)$'))
-    application.add_handler(CallbackQueryHandler(service_info,           pattern='^service_info$'))
-    application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services$'))
-    application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
-    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
+    application.add_handler(CallbackQueryHandler(cocktails,              pattern='^cocktails
+))
+    application.add_handler(CallbackQueryHandler(cocktails_alcoholic,    pattern='^cocktails_alcoholic
+))
+    application.add_handler(CallbackQueryHandler(cocktails_nonalcoholic, pattern='^cocktails_nonalcoholic
+))
+    application.add_handler(CallbackQueryHandler(cocktails_presentation, pattern='^cocktails_presentation
+))
+    application.add_handler(CallbackQueryHandler(wine_events,            pattern='^wine_events
+))
+    application.add_handler(CallbackQueryHandler(wine_tasting,           pattern='^wine_tasting
+))
+    application.add_handler(CallbackQueryHandler(wine_casino,            pattern='^wine_casino
+))
+    application.add_handler(CallbackQueryHandler(wine_pairing,           pattern='^wine_pairing
+))
+    application.add_handler(CallbackQueryHandler(pricing,                pattern='^pricing
+))
+    application.add_handler(CallbackQueryHandler(pricing_detail,         pattern='^pricing_(basic|standard|premium)
+))
+    application.add_handler(CallbackQueryHandler(service_info,           pattern='^service_info
+))
+    application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services
+))
+    application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio
+))
+    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews
+))
 
-    application.run_polling()
+    # Инициализируем приложение перед запуском polling
+    await application.initialize()
+    await application.start()
+
+    retry_delay = 5   # начальная задержка в секундах
+    max_delay   = 60  # максимальная задержка
+
+    try:
+        while True:
+            try:
+                logger.info("Запуск polling (drop_pending_updates=True)…")
+                await application.updater.start_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=Update.ALL_TYPES,
+                )
+                # Ждём сигнала остановки
+                await asyncio.Event().wait()
+                break  # нормальное завершение
+            except Conflict as e:
+                logger.error(
+                    "Конфликт polling (другой экземпляр бота запущен): %s. "
+                    "Повтор через %d сек…",
+                    e, retry_delay,
+                )
+                try:
+                    await application.updater.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+            except (NetworkError, TimedOut) as e:
+                logger.warning(
+                    "Сетевая ошибка: %s. Повтор через %d сек…",
+                    e, retry_delay,
+                )
+                try:
+                    await application.updater.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+            else:
+                retry_delay = 5  # сбрасываем задержку после успешного цикла
+    finally:
+        logger.info("Остановка бота…")
+        try:
+            await application.updater.stop()
+        except Exception:
+            pass
+        await application.stop()
+        await application.shutdown()
+        _polling_started = False
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
 
 if __name__ == '__main__':
     main()
