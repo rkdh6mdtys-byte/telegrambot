@@ -342,6 +342,20 @@ async def run_admin_bot() -> None:
         """
         retry_delay = 5   # начальная задержка в секундах
         max_delay   = 60  # максимальная задержка
+        first_attempt = True
+
+        # Небольшая пауза перед первым запуском, чтобы дать время старому
+        # экземпляру завершить polling-сессию на серверах Telegram.
+        logger.info("Ожидание 3 сек перед запуском polling (сброс старых сессий)…")
+        await asyncio.sleep(3)
+
+        # Сбрасываем очередь обновлений и завершаем любую активную сессию
+        # getUpdates на стороне Telegram до вызова start_polling().
+        try:
+            await tg_app.bot.get_updates(offset=-1, timeout=5)
+            logger.info("Очередь обновлений сброшена.")
+        except Exception as e:
+            logger.warning("Не удалось сбросить очередь обновлений: %s", e)
 
         while not shutdown_event.is_set():
             try:
@@ -352,19 +366,30 @@ async def run_admin_bot() -> None:
                 )
                 # start_polling() вернулся — polling завершён штатно
                 retry_delay = 5
+                first_attempt = False
                 break
             except Conflict as e:
-                logger.error(
-                    "Конфликт polling (другой экземпляр бота запущен): %s. "
-                    "Повтор через %d сек…",
-                    e, retry_delay,
-                )
+                # При первом конфликте повторяем немедленно — старая сессия
+                # должна уже истечь после нашей паузы и вызова get_updates.
+                if first_attempt:
+                    logger.warning(
+                        "Конфликт polling при первом запуске: %s. "
+                        "Немедленный повтор…",
+                        e,
+                    )
+                    first_attempt = False
+                else:
+                    logger.error(
+                        "Конфликт polling (другой экземпляр бота запущен): %s. "
+                        "Повтор через %d сек…",
+                        e, retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_delay)
                 try:
                     await tg_app.updater.stop()
                 except Exception:
                     pass
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, max_delay)
             except (NetworkError, TimedOut) as e:
                 logger.warning(
                     "Сетевая ошибка: %s. Повтор через %d сек…",
@@ -376,6 +401,7 @@ async def run_admin_bot() -> None:
                     pass
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
+                first_attempt = False
 
     async def shutdown_waiter() -> None:
         """Ждёт сигнала завершения и останавливает updater, чтобы
