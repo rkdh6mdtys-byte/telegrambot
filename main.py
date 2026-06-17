@@ -811,10 +811,8 @@ async def run_bot() -> None:
     # ConversationHandler для заявок
     conv_handler = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(services,           pattern='^services
-),
-            CallbackQueryHandler(application_direct, pattern='^application
-),
+            CallbackQueryHandler(services,           pattern='^services$'),
+            CallbackQueryHandler(application_direct, pattern='^application$'),
         ],
         states={
             CHOOSING_SERVICE: [
@@ -828,8 +826,7 @@ async def run_bot() -> None:
             ],
             CONFIRMING_PACKAGE: [
                 CallbackQueryHandler(confirm_package,  pattern='^confirm_package_'),
-                CallbackQueryHandler(change_package,   pattern='^change_package
-),
+                CallbackQueryHandler(change_package,   pattern='^change_package$'),
             ],
             CHOOSING_PACKAGE_MANUAL: [
                 CallbackQueryHandler(manual_package_selected, pattern='^manual_package_'),
@@ -847,39 +844,24 @@ async def run_bot() -> None:
 
     # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(menu, pattern='^menu
-))
+    application.add_handler(CallbackQueryHandler(menu, pattern='^menu$'))
     application.add_handler(conv_handler)
 
     # Информационные разделы (вне диалога)
-    application.add_handler(CallbackQueryHandler(cocktails,              pattern='^cocktails
-))
-    application.add_handler(CallbackQueryHandler(cocktails_alcoholic,    pattern='^cocktails_alcoholic
-))
-    application.add_handler(CallbackQueryHandler(cocktails_nonalcoholic, pattern='^cocktails_nonalcoholic
-))
-    application.add_handler(CallbackQueryHandler(cocktails_presentation, pattern='^cocktails_presentation
-))
-    application.add_handler(CallbackQueryHandler(wine_events,            pattern='^wine_events
-))
-    application.add_handler(CallbackQueryHandler(wine_tasting,           pattern='^wine_tasting
-))
-    application.add_handler(CallbackQueryHandler(wine_casino,            pattern='^wine_casino
-))
-    application.add_handler(CallbackQueryHandler(wine_pairing,           pattern='^wine_pairing
-))
-    application.add_handler(CallbackQueryHandler(pricing,                pattern='^pricing
-))
-    application.add_handler(CallbackQueryHandler(pricing_detail,         pattern='^pricing_(basic|standard|premium)
-))
-    application.add_handler(CallbackQueryHandler(service_info,           pattern='^service_info
-))
-    application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services
-))
-    application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio
-))
-    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews
-))
+    application.add_handler(CallbackQueryHandler(cocktails,              pattern='^cocktails$'))
+    application.add_handler(CallbackQueryHandler(cocktails_alcoholic,    pattern='^cocktails_alcoholic$'))
+    application.add_handler(CallbackQueryHandler(cocktails_nonalcoholic, pattern='^cocktails_nonalcoholic$'))
+    application.add_handler(CallbackQueryHandler(cocktails_presentation, pattern='^cocktails_presentation$'))
+    application.add_handler(CallbackQueryHandler(wine_events,            pattern='^wine_events$'))
+    application.add_handler(CallbackQueryHandler(wine_tasting,           pattern='^wine_tasting$'))
+    application.add_handler(CallbackQueryHandler(wine_casino,            pattern='^wine_casino$'))
+    application.add_handler(CallbackQueryHandler(wine_pairing,           pattern='^wine_pairing$'))
+    application.add_handler(CallbackQueryHandler(pricing,                pattern='^pricing$'))
+    application.add_handler(CallbackQueryHandler(pricing_detail,         pattern='^pricing_(basic|standard|premium)$'))
+    application.add_handler(CallbackQueryHandler(service_info,           pattern='^service_info$'))
+    application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services$'))
+    application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
+    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
 
     # Инициализируем приложение перед запуском polling
     await application.initialize()
