@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import json
+import signal
 import uuid
 from datetime import datetime
 from aiohttp import web
@@ -286,8 +287,6 @@ async def handle_health(request: web.Request) -> web.Response:
     })
 
 
-# ─── Запуск ───────────────────────────────────────────────────────────────────
-
 async def run_admin_bot() -> None:
     """Запуск admin-бота вместе с aiohttp-сервером для приёма webhook-заявок."""
     if not ADMIN_BOT_TOKEN:
@@ -322,21 +321,33 @@ async def run_admin_bot() -> None:
     await site.start()
     logger.info("HTTP-сервер запущен на http://%s:%s", WEBHOOK_HOST, WEBHOOK_PORT)
 
-    # ── Polling с обработкой конфликтов и экспоненциальным backoff ───────────
-    retry_delay = 5   # начальная задержка в секундах
-    max_delay   = 60  # максимальная задержка
+    # ── Shutdown event — сигнализирует о завершении работы ───────────────────
+    shutdown_event = asyncio.Event()
 
-    try:
-        while True:
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Polling-задача с обработкой конфликтов и экспоненциальным backoff ────
+    async def polling_loop() -> None:
+        retry_delay = 5   # начальная задержка в секундах
+        max_delay   = 60  # максимальная задержка
+
+        while not shutdown_event.is_set():
             try:
                 logger.info("Запуск polling (drop_pending_updates=True)…")
                 await tg_app.updater.start_polling(
                     drop_pending_updates=True,
                     allowed_updates=Update.ALL_TYPES,
                 )
-                # Держим сервер живым до сигнала остановки
-                await asyncio.Event().wait()
-                break  # нормальное завершение
+                retry_delay = 5  # сбрасываем задержку после успешного старта
+                # Ждём сигнала завершения, не блокируя event loop
+                await shutdown_event.wait()
+                break
             except Conflict as e:
                 logger.error(
                     "Конфликт polling (другой экземпляр бота запущен): %s. "
@@ -360,10 +371,20 @@ async def run_admin_bot() -> None:
                     pass
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
-            else:
-                retry_delay = 5  # сбрасываем задержку после успешного цикла
+
+    # Запускаем polling как фоновую задачу, не блокируя event loop
+    polling_task = asyncio.create_task(polling_loop())
+
+    try:
+        # Главный event loop свободен для обработки HTTP-запросов aiohttp
+        await shutdown_event.wait()
     finally:
         logger.info("Остановка admin-бота…")
+        polling_task.cancel()
+        try:
+            await polling_task
+        except asyncio.CancelledError:
+            pass
         try:
             await tg_app.updater.stop()
         except Exception:
