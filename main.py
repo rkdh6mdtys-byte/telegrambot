@@ -867,10 +867,22 @@ async def run_bot() -> None:
     await application.initialize()
     await application.start()
 
-    retry_delay = 5   # начальная задержка в секундах
-    max_delay   = 60  # максимальная задержка
+    retry_delay   = 5    # начальная задержка в секундах
+    max_delay     = 60   # максимальная задержка
+    first_attempt = True # флаг первой попытки для обработки Conflict без backoff
 
     try:
+        # Даём старому экземпляру время завершить polling-сессию
+        logger.info("Ожидание 3 сек перед запуском polling (сброс старых сессий)…")
+        await asyncio.sleep(3)
+
+        # Принудительно завершаем любую зависшую getUpdates-сессию на стороне Telegram
+        try:
+            await application.bot.get_updates(offset=-1, timeout=5)
+            logger.info("Старая getUpdates-сессия сброшена.")
+        except Exception as e:
+            logger.warning("Не удалось сбросить старую сессию (игнорируется): %s", e)
+
         while True:
             try:
                 logger.info("Запуск polling (drop_pending_updates=True)…")
@@ -882,17 +894,27 @@ async def run_bot() -> None:
                 await asyncio.Event().wait()
                 break  # нормальное завершение
             except Conflict as e:
-                logger.error(
-                    "Конфликт polling (другой экземпляр бота запущен): %s. "
-                    "Повтор через %d сек…",
-                    e, retry_delay,
-                )
                 try:
                     await application.updater.stop()
                 except Exception:
                     pass
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, max_delay)
+                if first_attempt:
+                    # Первый Conflict — старая сессия только что вытеснена,
+                    # повторяем немедленно без backoff
+                    logger.warning(
+                        "Конфликт polling при первой попытке: %s. "
+                        "Повтор немедленно…",
+                        e,
+                    )
+                    first_attempt = False
+                else:
+                    logger.error(
+                        "Конфликт polling (другой экземпляр бота запущен): %s. "
+                        "Повтор через %d сек…",
+                        e, retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_delay)
             except (NetworkError, TimedOut) as e:
                 logger.warning(
                     "Сетевая ошибка: %s. Повтор через %d сек…",
@@ -902,10 +924,12 @@ async def run_bot() -> None:
                     await application.updater.stop()
                 except Exception:
                     pass
+                first_attempt = False
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
             else:
-                retry_delay = 5  # сбрасываем задержку после успешного цикла
+                retry_delay   = 5     # сбрасываем задержку после успешного цикла
+                first_attempt = False
     finally:
         logger.info("Остановка бота…")
         try:
