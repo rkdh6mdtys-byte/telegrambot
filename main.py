@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -167,6 +167,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             InlineKeyboardButton("⭐ Отзывы",      callback_data='reviews'),
         ],
         [InlineKeyboardButton("📝 Оставить заявку", callback_data='application')],
+        [InlineKeyboardButton("📊 Мои заявки", web_app=WebAppInfo(url="https://applications-dashboard-production-2e37.up.railway.app"))],
     ]
     await query.edit_message_text(
         "Выберите раздел:",
