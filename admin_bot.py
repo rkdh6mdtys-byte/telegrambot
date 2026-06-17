@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime
 from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     ContextTypes,
@@ -22,10 +21,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Конфигурация ─────────────────────────────────────────────────────────────
-ADMIN_BOT_TOKEN = os.getenv('TELEGRAM_ADMIN_BOT_TOKEN')
-ADMIN_CHAT_ID   = int(os.getenv('ADMIN_CHAT_ID', '6133417158'))
-WEBHOOK_PORT    = int(os.getenv('ADMIN_BOT_PORT', '8081'))
-WEBHOOK_HOST    = os.getenv('ADMIN_BOT_HOST', '0.0.0.0')
+ADMIN_BOT_TOKEN  = os.getenv('TELEGRAM_ADMIN_BOT_TOKEN')
+ADMIN_CHAT_ID    = int(os.getenv('ADMIN_CHAT_ID', '6133417158'))
+WEBHOOK_PORT     = int(os.getenv('ADMIN_BOT_PORT', '8081'))
+WEBHOOK_HOST     = os.getenv('ADMIN_BOT_HOST', '0.0.0.0')
+WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL', '')
 
 # ─── Статусы заявок ───────────────────────────────────────────────────────────
 STATUS_NEW         = 'new'
@@ -216,7 +216,7 @@ async def cb_list_applications(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
-# ─── Webhook-обработчик для входящих заявок ───────────────────────────────────
+# ─── Webhook-обработчики ──────────────────────────────────────────────────────
 
 async def handle_application_webhook(request: web.Request) -> web.Response:
     """
@@ -278,12 +278,25 @@ async def handle_application_webhook(request: web.Request) -> web.Response:
     return web.json_response({'ok': True, 'app_id': app_id})
 
 
+async def handle_telegram_webhook(request: web.Request) -> web.Response:
+    """POST /webhook/telegram — принимает обновления от Telegram."""
+    tg_app: Application = request.app['tg_app']
+    try:
+        data = await request.json()
+        update = Update.de_json(data, tg_app.bot)
+        await tg_app.process_update(update)
+    except Exception as e:
+        logger.error("Ошибка при обработке Telegram webhook: %s", e)
+        return web.json_response({'ok': False, 'error': str(e)}, status=500)
+    return web.json_response({'ok': True})
+
+
 async def handle_health(request: web.Request) -> web.Response:
     """GET /health — проверка работоспособности сервиса."""
     return web.json_response({
-        'ok':               True,
-        'applications':     len(applications),
-        'timestamp':        datetime.now().isoformat(),
+        'ok':           True,
+        'applications': len(applications),
+        'timestamp':    datetime.now().isoformat(),
     })
 
 
@@ -295,23 +308,38 @@ async def run_admin_bot() -> None:
             "Задайте переменную окружения перед запуском."
         )
 
-    # ── Telegram Application ──────────────────────────────────────────────────
-    tg_app = Application.builder().token(ADMIN_BOT_TOKEN).build()
+    # ── Telegram Application (без updater — webhook mode) ────────────────────
+    tg_app = (
+        Application.builder()
+        .token(ADMIN_BOT_TOKEN)
+        .updater(None)
+        .build()
+    )
 
     tg_app.add_handler(CommandHandler('start',        cmd_start))
     tg_app.add_handler(CommandHandler('applications', cmd_applications))
     tg_app.add_handler(CallbackQueryHandler(cb_status_update,     pattern=r'^status:'))
     tg_app.add_handler(CallbackQueryHandler(cb_list_applications, pattern=r'^list_applications$'))
 
-    # Инициализируем приложение до запуска polling и web-сервера
+    # Инициализируем приложение
     await tg_app.initialize()
     await tg_app.start()
     logger.info("Telegram Application инициализирован.")
 
+    # Регистрируем webhook в Telegram
+    if WEBHOOK_BASE_URL:
+        webhook_url = f"{WEBHOOK_BASE_URL.rstrip('/')}/webhook/telegram"
+        await tg_app.bot.set_webhook(webhook_url)
+        logger.info("Webhook зарегистрирован: %s", webhook_url)
+    else:
+        logger.warning("WEBHOOK_BASE_URL не задан — webhook не зарегистрирован.")
+
     # ── aiohttp Web Application ───────────────────────────────────────────────
     web_app = web.Application()
-    web_app['bot'] = tg_app.bot
+    web_app['bot']    = tg_app.bot
+    web_app['tg_app'] = tg_app
 
+    web_app.router.add_post('/webhook/telegram',    handle_telegram_webhook)
     web_app.router.add_post('/webhook/application', handle_application_webhook)
     web_app.router.add_get('/health',               handle_health)
 
@@ -332,98 +360,14 @@ async def run_admin_bot() -> None:
             # Windows не поддерживает add_signal_handler
             pass
 
-    # ── Polling-задача с обработкой конфликтов и экспоненциальным backoff ────
-    async def polling_loop() -> None:
-        """Запускает polling в цикле с экспоненциальным backoff при ошибках.
+    # Ждём сигнала завершения
+    await shutdown_event.wait()
 
-        start_polling() в PTB v20 блокирует до остановки updater-а, поэтому
-        эта корутина выполняется конкурентно через asyncio.gather(), не
-        блокируя event loop aiohttp.
-        """
-        retry_delay  = 5    # начальная задержка в секундах
-        max_delay    = 60   # максимальная задержка
-        first_attempt = True
-
-        # Даём старому экземпляру время завершить polling-сессию
-        logger.info("Ожидание 3 сек перед запуском polling (сброс старых сессий)…")
-        await asyncio.sleep(3)
-
-        # Принудительно завершаем любую зависшую getUpdates-сессию на стороне Telegram
-        try:
-            logger.info("Сброс зависшей getUpdates-сессии через get_updates(offset=-1)…")
-            await tg_app.bot.get_updates(offset=-1, timeout=5)
-        except Exception as e:
-            logger.warning("get_updates(offset=-1) вернул ошибку (ожидаемо): %s", e)
-
-        while not shutdown_event.is_set():
-            try:
-                logger.info("Запуск polling (drop_pending_updates=True)…")
-                await tg_app.updater.start_polling(
-                    drop_pending_updates=True,
-                    allowed_updates=Update.ALL_TYPES,
-                )
-                # start_polling() вернулся — polling завершён штатно
-                retry_delay   = 5
-                first_attempt = True
-                break
-            except Conflict as e:
-                try:
-                    await tg_app.updater.stop()
-                except Exception:
-                    pass
-                if first_attempt:
-                    # Первый конфликт: старая сессия ещё не успела умереть —
-                    # повторяем немедленно без backoff
-                    logger.warning(
-                        "Конфликт polling при первой попытке: %s. "
-                        "Немедленный повтор…",
-                        e,
-                    )
-                    first_attempt = False
-                else:
-                    logger.error(
-                        "Конфликт polling (другой экземпляр бота запущен): %s. "
-                        "Повтор через %d сек…",
-                        e, retry_delay,
-                    )
-                    await asyncio.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 2, max_delay)
-            except (NetworkError, TimedOut) as e:
-                logger.warning(
-                    "Сетевая ошибка: %s. Повтор через %d сек…",
-                    e, retry_delay,
-                )
-                try:
-                    await tg_app.updater.stop()
-                except Exception:
-                    pass
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, max_delay)
-
-    async def shutdown_waiter() -> None:
-        """Ждёт сигнала завершения и останавливает updater, чтобы
-        разблокировать polling_loop (start_polling() вернётся после stop())."""
-        await shutdown_event.wait()
-        logger.info("Получен сигнал завершения — останавливаем polling…")
-        try:
-            await tg_app.updater.stop()
-        except Exception:
-            pass
-
-    try:
-        # asyncio.gather() запускает polling_loop и shutdown_waiter конкурентно,
-        # оставляя event loop свободным для обработки HTTP-запросов aiohttp.
-        await asyncio.gather(polling_loop(), shutdown_waiter())
-    finally:
-        logger.info("Остановка admin-бота…")
-        try:
-            await tg_app.updater.stop()
-        except Exception:
-            pass
-        await tg_app.stop()
-        await tg_app.shutdown()
-        await runner.cleanup()
-        logger.info("Admin-бот остановлен.")
+    logger.info("Остановка admin-бота…")
+    await tg_app.stop()
+    await tg_app.shutdown()
+    await runner.cleanup()
+    logger.info("Admin-бот остановлен.")
 
 
 def main() -> None:
