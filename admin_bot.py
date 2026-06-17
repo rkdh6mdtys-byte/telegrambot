@@ -302,8 +302,7 @@ async def run_admin_bot() -> None:
     tg_app.add_handler(CommandHandler('start',        cmd_start))
     tg_app.add_handler(CommandHandler('applications', cmd_applications))
     tg_app.add_handler(CallbackQueryHandler(cb_status_update,     pattern=r'^status:'))
-    tg_app.add_handler(CallbackQueryHandler(cb_list_applications, pattern=r'^list_applications
-))
+    tg_app.add_handler(CallbackQueryHandler(cb_list_applications, pattern=r'^list_applications$'))
 
     # Инициализируем приложение до запуска polling и web-сервера
     await tg_app.initialize()
