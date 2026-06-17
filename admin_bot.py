@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import json
@@ -5,6 +6,7 @@ import uuid
 from datetime import datetime
 from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     ContextTypes,
@@ -286,7 +288,7 @@ async def handle_health(request: web.Request) -> web.Response:
 
 # ─── Запуск ───────────────────────────────────────────────────────────────────
 
-def main() -> None:
+async def run_admin_bot() -> None:
     """Запуск admin-бота вместе с aiohttp-сервером для приёма webhook-заявок."""
     if not ADMIN_BOT_TOKEN:
         raise ValueError(
@@ -299,8 +301,14 @@ def main() -> None:
 
     tg_app.add_handler(CommandHandler('start',        cmd_start))
     tg_app.add_handler(CommandHandler('applications', cmd_applications))
-    tg_app.add_handler(CallbackQueryHandler(cb_status_update,    pattern=r'^status:'))
-    tg_app.add_handler(CallbackQueryHandler(cb_list_applications, pattern=r'^list_applications$'))
+    tg_app.add_handler(CallbackQueryHandler(cb_status_update,     pattern=r'^status:'))
+    tg_app.add_handler(CallbackQueryHandler(cb_list_applications, pattern=r'^list_applications
+))
+
+    # Инициализируем приложение до запуска polling и web-сервера
+    await tg_app.initialize()
+    await tg_app.start()
+    logger.info("Telegram Application инициализирован.")
 
     # ── aiohttp Web Application ───────────────────────────────────────────────
     web_app = web.Application()
@@ -309,50 +317,67 @@ def main() -> None:
     web_app.router.add_post('/webhook/application', handle_application_webhook)
     web_app.router.add_get('/health',               handle_health)
 
-    async def on_startup(app: web.Application) -> None:
-        await tg_app.initialize()
-        await tg_app.start()
-        logger.info(
-            "Admin-бот запущен. Webhook-сервер слушает %s:%s",
-            WEBHOOK_HOST, WEBHOOK_PORT,
-        )
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
+    await site.start()
+    logger.info("HTTP-сервер запущен на http://%s:%s", WEBHOOK_HOST, WEBHOOK_PORT)
 
-    async def on_shutdown(app: web.Application) -> None:
+    # ── Polling с обработкой конфликтов и экспоненциальным backoff ───────────
+    retry_delay = 5   # начальная задержка в секундах
+    max_delay   = 60  # максимальная задержка
+
+    try:
+        while True:
+            try:
+                logger.info("Запуск polling (drop_pending_updates=True)…")
+                await tg_app.updater.start_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=Update.ALL_TYPES,
+                )
+                # Держим сервер живым до сигнала остановки
+                await asyncio.Event().wait()
+                break  # нормальное завершение
+            except Conflict as e:
+                logger.error(
+                    "Конфликт polling (другой экземпляр бота запущен): %s. "
+                    "Повтор через %d сек…",
+                    e, retry_delay,
+                )
+                try:
+                    await tg_app.updater.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+            except (NetworkError, TimedOut) as e:
+                logger.warning(
+                    "Сетевая ошибка: %s. Повтор через %d сек…",
+                    e, retry_delay,
+                )
+                try:
+                    await tg_app.updater.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+            else:
+                retry_delay = 5  # сбрасываем задержку после успешного цикла
+    finally:
+        logger.info("Остановка admin-бота…")
+        try:
+            await tg_app.updater.stop()
+        except Exception:
+            pass
         await tg_app.stop()
         await tg_app.shutdown()
+        await runner.cleanup()
         logger.info("Admin-бот остановлен.")
 
-    web_app.on_startup.append(on_startup)
-    web_app.on_shutdown.append(on_shutdown)
 
-    # Запускаем polling в фоне через asyncio и web-сервер в основном потоке
-    import asyncio
-
-    async def run_all() -> None:
-        # Запускаем polling Telegram в фоновой задаче
-        polling_task = asyncio.create_task(
-            tg_app.updater.start_polling(drop_pending_updates=True)
-        )
-
-        # Запускаем aiohttp-сервер
-        runner = web.AppRunner(web_app)
-        await runner.setup()
-        site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
-        await site.start()
-
-        logger.info(
-            "HTTP-сервер запущен на http://%s:%s",
-            WEBHOOK_HOST, WEBHOOK_PORT,
-        )
-
-        try:
-            # Держим сервер живым
-            await asyncio.Event().wait()
-        finally:
-            polling_task.cancel()
-            await runner.cleanup()
-
-    asyncio.run(run_all())
+def main() -> None:
+    """Точка входа: запускает event loop с run_admin_bot()."""
+    asyncio.run(run_admin_bot())
 
 
 if __name__ == '__main__':
