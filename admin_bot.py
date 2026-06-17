@@ -334,6 +334,12 @@ async def run_admin_bot() -> None:
 
     # ── Polling-задача с обработкой конфликтов и экспоненциальным backoff ────
     async def polling_loop() -> None:
+        """Запускает polling в цикле с экспоненциальным backoff при ошибках.
+
+        start_polling() в PTB v20 блокирует до остановки updater-а, поэтому
+        эта корутина выполняется конкурентно через asyncio.gather(), не
+        блокируя event loop aiohttp.
+        """
         retry_delay = 5   # начальная задержка в секундах
         max_delay   = 60  # максимальная задержка
 
@@ -344,9 +350,8 @@ async def run_admin_bot() -> None:
                     drop_pending_updates=True,
                     allowed_updates=Update.ALL_TYPES,
                 )
-                retry_delay = 5  # сбрасываем задержку после успешного старта
-                # Ждём сигнала завершения, не блокируя event loop
-                await shutdown_event.wait()
+                # start_polling() вернулся — polling завершён штатно
+                retry_delay = 5
                 break
             except Conflict as e:
                 logger.error(
@@ -372,19 +377,22 @@ async def run_admin_bot() -> None:
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
 
-    # Запускаем polling как фоновую задачу, не блокируя event loop
-    polling_task = asyncio.create_task(polling_loop())
+    async def shutdown_waiter() -> None:
+        """Ждёт сигнала завершения и останавливает updater, чтобы
+        разблокировать polling_loop (start_polling() вернётся после stop())."""
+        await shutdown_event.wait()
+        logger.info("Получен сигнал завершения — останавливаем polling…")
+        try:
+            await tg_app.updater.stop()
+        except Exception:
+            pass
 
     try:
-        # Главный event loop свободен для обработки HTTP-запросов aiohttp
-        await shutdown_event.wait()
+        # asyncio.gather() запускает polling_loop и shutdown_waiter конкурентно,
+        # оставляя event loop свободным для обработки HTTP-запросов aiohttp.
+        await asyncio.gather(polling_loop(), shutdown_waiter())
     finally:
         logger.info("Остановка admin-бота…")
-        polling_task.cancel()
-        try:
-            await polling_task
-        except asyncio.CancelledError:
-            pass
         try:
             await tg_app.updater.stop()
         except Exception:
