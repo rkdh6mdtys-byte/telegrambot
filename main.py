@@ -1,12 +1,14 @@
 import logging
+import os
+from datetime import datetime
+
+import aiohttp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
 )
 from telegram.constants import ParseMode
-import os
-from datetime import datetime
 
 # Включаем логирование
 logging.basicConfig(
@@ -28,6 +30,12 @@ logger = logging.getLogger(__name__)
 
 # ID администратора
 ADMIN_ID = 6133417158
+
+# URL вебхука admin-бота для передачи заявок
+ADMIN_BOT_WEBHOOK_URL = os.getenv(
+    'ADMIN_BOT_WEBHOOK_URL',
+    'https://admin-bot-production-xxx.railway.app/webhook/application',
+)
 
 # ─── Пакеты услуг ─────────────────────────────────────────────────────────────
 PACKAGES = {
@@ -342,6 +350,30 @@ async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
     except Exception as e:
         logger.error(f"Ошибка при отправке заявки администратору: {e}")
+
+    # Отправляем заявку в admin-бот через webhook
+    webhook_payload = {
+        'service': context.user_data.get('service', '—'),
+        'name':    context.user_data.get('name',    '—'),
+        'phone':   context.user_data.get('phone',   '—'),
+        'guests':  context.user_data.get('guests',  '—'),
+        'date':    context.user_data.get('date',    '—'),
+        'package': package['name'],
+        'price':   package['price'],
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                ADMIN_BOT_WEBHOOK_URL,
+                json=webhook_payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    logger.info("Заявка успешно отправлена в admin-бот (статус %s)", resp.status)
+                else:
+                    logger.warning("Admin-бот вернул неожиданный статус %s", resp.status)
+    except Exception as e:
+        logger.error("Ошибка при отправке заявки в admin-бот: %s", e)
 
     # Подтверждение пользователю
     confirm_text = (
