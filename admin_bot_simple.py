@@ -65,6 +65,7 @@ async def cmd_applications(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     for app_id, app in sorted(applications.items(), key=lambda x: x[1]['created_at'], reverse=True):
         text += f"<b>#{app_id}</b> {status_label(app.get('status', 'new'))}\n"
         text += f"<b>Имя:</b> {app['name']}\n"
+        text += f"<b>Username:</b> {app.get('username', '—')}\n"
         text += f"<b>Телефон:</b> {app['phone']}\n"
         text += f"<b>Услуга:</b> {app['service']}\n"
         text += f"<b>Дата:</b> {app['date']}\n"
@@ -97,7 +98,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         block = f"<b>{emoji} {label.upper()} ({len(apps)})</b>\n"
         for app_id, app in apps:
             block += (
-                f"  <b>#{app_id}</b> — {app['name']}, {app['phone']}\n"
+                f"  <b>#{app_id}</b> — {app['name']} ({app.get('username', '—')}), {app['phone']}\n"
                 f"  {app['service']} · {app['date']} · {app['package']}\n"
             )
         sections.append(block)
@@ -131,6 +132,7 @@ async def callback_status_change(update: Update, context: ContextTypes.DEFAULT_T
         f"<b>📋 ЗАЯВКА #{app_id}</b>\n\n"
         f"<b>Статус:</b> {status_label(new_status)}\n"
         f"<b>Имя:</b> {app['name']}\n"
+        f"<b>Username:</b> {app.get('username', '—')}\n"
         f"<b>Телефон:</b> {app['phone']}\n"
         f"<b>Услуга:</b> {app['service']}\n"
         f"<b>Дата:</b> {app['date']}\n"
@@ -152,8 +154,12 @@ async def handle_application(request: web.Request) -> web.Response:
         data = await request.json()
         app_id = str(len(applications) + 1)
         
+        raw_username = data.get('username', '')
+        username_display = f"@{raw_username}" if raw_username else "—"
+
         applications[app_id] = {
             'name': data.get('name', '—'),
+            'username': username_display,
             'phone': data.get('phone', '—'),
             'service': data.get('service', '—'),
             'date': data.get('date', '—'),
@@ -172,6 +178,7 @@ async def handle_application(request: web.Request) -> web.Response:
             f"<b>📋 НОВАЯ ЗАЯВКА #{app_id}</b>\n\n"
             f"<b>Статус:</b> {status_label(app['status'])}\n"
             f"<b>Имя:</b> {app['name']}\n"
+            f"<b>Username:</b> {app['username']}\n"
             f"<b>Телефон:</b> {app['phone']}\n"
             f"<b>Услуга:</b> {app['service']}\n"
             f"<b>Дата:</b> {app['date']}\n"
