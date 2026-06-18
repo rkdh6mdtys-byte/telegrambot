@@ -909,8 +909,24 @@ async def run_bot() -> None:
     runner = web.AppRunner(web_app)
     await runner.setup()
     site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
-    await site.start()
-    logger.info("HTTP-сервер запущен на http://%s:%s", WEBHOOK_HOST, WEBHOOK_PORT)
+    try:
+        await site.start()
+    except OSError as e:
+        logger.critical(
+            "Не удалось запустить HTTP-сервер на %s:%s — %s",
+            WEBHOOK_HOST, WEBHOOK_PORT, e,
+        )
+        await application.stop()
+        await application.shutdown()
+        await runner.cleanup()
+        raise
+
+    # Небольшая пауза, чтобы сокет успел полностью открыться
+    await asyncio.sleep(0.1)
+    logger.info(
+        "HTTP-сервер запущен и слушает на http://%s:%s",
+        WEBHOOK_HOST, WEBHOOK_PORT,
+    )
 
     # ── Shutdown event — сигнализирует о завершении работы ───────────────────
     shutdown_event = asyncio.Event()
