@@ -963,6 +963,7 @@ async def run_bot() -> None:
 
         logger.info("Остановка бота…")
         await application.updater.stop()
+        await application.stop()
 
     await runner.cleanup()
     logger.info("Бот остановлен.")
