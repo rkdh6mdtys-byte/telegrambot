@@ -121,7 +121,6 @@ async def main():
     
     # Запускаем бота
     async with app:
-        await app.initialize()
         await app.start()
         await app.updater.start_polling(drop_pending_updates=True)
         logger.info("✅ Polling запущен. Бот готов к работе.")
@@ -133,6 +132,7 @@ async def main():
             logger.info("⏹ Получен сигнал завершения")
         finally:
             await app.updater.stop()
+            await app.stop()
     
     await runner.cleanup()
     logger.info("✅ Admin-bot остановлен")
