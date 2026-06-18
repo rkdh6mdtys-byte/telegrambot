@@ -182,6 +182,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             InlineKeyboardButton("📸 Наши работы", callback_data='portfolio'),
             InlineKeyboardButton("⭐ Отзывы",      callback_data='reviews'),
         ],
+        [InlineKeyboardButton("🖼️ Презентация",    callback_data='presentation')],
         [InlineKeyboardButton("📝 Оставить заявку", callback_data='application')],
     ]
     await query.edit_message_text(
@@ -791,6 +792,37 @@ async def reviews(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         parse_mode=ParseMode.HTML,
     )
 
+# ─── Презентация ─────────────────────────────────────────────────────────────
+PRESENTATION_PATH = os.path.join(os.path.dirname(__file__), 'presentations', 'presentation.pdf')
+
+async def presentation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отправляет файл презентации пользователю."""
+    query = update.callback_query
+    await query.answer()
+
+    if not os.path.isfile(PRESENTATION_PATH):
+        keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
+        await query.edit_message_text(
+            "⚠️ Презентация временно недоступна. Попробуйте позже.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
+    await query.edit_message_text(
+        "🖼️ <b>ПРЕЗЕНТАЦИЯ</b>\n\nОтправляю файл…",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML,
+    )
+    with open(PRESENTATION_PATH, 'rb') as f:
+        await context.bot.send_document(
+            chat_id=query.message.chat_id,
+            document=f,
+            filename='presentation.pdf',
+            caption="🖼️ <b>Презентация ВОЛНЫ</b>",
+            parse_mode=ParseMode.HTML,
+        )
+
 # ─── Отмена ───────────────────────────────────────────────────────────────────
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Отмена диалога."""
@@ -935,6 +967,7 @@ async def run_bot() -> None:
     application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services$'))
     application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
     application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
 
     # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
     application.add_handler(MessageHandler(filters.TEXT, unknown_message))
