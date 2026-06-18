@@ -333,14 +333,21 @@ async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Ввод телефона → отправляем заявку."""
     context.user_data['phone'] = update.message.text.strip()
 
+    # Сохраняем username пользователя Telegram
+    tg_user = update.effective_user
+    username = tg_user.username if tg_user and tg_user.username else None
+
     package_key = context.user_data.get('package_key', 'basic')
     package = PACKAGES[package_key]
+
+    username_display = f"@{username}" if username else "—"
 
     # Заявка для администратора
     admin_text = (
         "<b>📋 НОВАЯ ЗАЯВКА</b>\n\n"
         f"<b>Услуга:</b> {context.user_data.get('service', '—')}\n"
         f"<b>Имя:</b> {context.user_data.get('name', '—')}\n"
+        f"<b>Username:</b> {username_display}\n"
         f"<b>Телефон:</b> {context.user_data.get('phone', '—')}\n"
         f"<b>Гостей:</b> {context.user_data.get('guests', '—')}\n"
         f"<b>Дата:</b> {context.user_data.get('date', '—')}\n\n"
@@ -361,13 +368,14 @@ async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Отправляем заявку в admin-бот через webhook
     webhook_payload = {
-        'service': context.user_data.get('service', '—'),
-        'name':    context.user_data.get('name',    '—'),
-        'phone':   context.user_data.get('phone',   '—'),
-        'guests':  context.user_data.get('guests',  '—'),
-        'date':    context.user_data.get('date',    '—'),
-        'package': package['name'],
-        'price':   package['price'],
+        'service':  context.user_data.get('service', '—'),
+        'name':     context.user_data.get('name',    '—'),
+        'username': username or '',
+        'phone':    context.user_data.get('phone',   '—'),
+        'guests':   context.user_data.get('guests',  '—'),
+        'date':     context.user_data.get('date',    '—'),
+        'package':  package['name'],
+        'price':    package['price'],
     }
     try:
         async with aiohttp.ClientSession() as session:
