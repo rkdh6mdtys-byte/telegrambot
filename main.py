@@ -25,9 +25,10 @@ logger = logging.getLogger(__name__)
 # ─── Состояния ConversationHandler ───────────────────────────────────────────
 (
     CHOOSING_SERVICE,
+    CHOOSING_PACKAGE,
+    CONFIRMING_PACKAGE,
     ENTERING_NAME,
     ENTERING_GUESTS,
-    CONFIRMING_PACKAGE,
     CHOOSING_PACKAGE_MANUAL,
     ENTERING_DATE,
     ENTERING_PHONE,
