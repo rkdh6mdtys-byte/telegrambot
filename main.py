@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import signal
+import uuid
 from datetime import datetime
 
 import aiohttp
@@ -40,10 +41,9 @@ ADMIN_BOT_WEBHOOK_URL = os.getenv(
     'https://admin-bot-production-xxx.railway.app/webhook/application',
 )
 
-# Конфигурация webhook-сервера
-WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL', '')
-WEBHOOK_PORT     = int(os.getenv('PORT', '8080'))
-WEBHOOK_HOST     = os.getenv('HOST', '0.0.0.0')
+# Конфигурация HTTP-сервера (для приёма заявок с формы)
+HTTP_PORT = int(os.getenv('PORT', '8080'))
+HTTP_HOST = os.getenv('HOST', '0.0.0.0')
 
 # ─── Пакеты услуг ─────────────────────────────────────────────────────────────
 PACKAGES = {
@@ -792,19 +792,54 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-# ─── Webhook-обработчики ──────────────────────────────────────────────────────
+# ─── HTTP-обработчики (для приёма заявок с формы) ────────────────────────────
 
-async def handle_telegram_webhook(request: web.Request) -> web.Response:
-    """POST /webhook/telegram — принимает обновления от Telegram."""
-    application: Application = request.app['application']
+async def handle_application_webhook(request: web.Request) -> web.Response:
+    """
+    POST /webhook/application
+    Принимает JSON с данными заявки от веб-формы и пересылает в admin-бот.
+
+    Ожидаемый формат тела запроса (все поля опциональны):
+    {
+        "service":  "Свадьба",
+        "name":     "Иван Иванов",
+        "phone":    "+7 999 000 00 00",
+        "guests":   50,
+        "date":     "15.08.2025",
+        "package":  "Стандарт",
+        "price":    "100 000 ₽"
+    }
+    """
     try:
         data = await request.json()
-        update = Update.de_json(data, application.bot)
-        await application.process_update(update)
+    except Exception:
+        logger.warning("Webhook: не удалось разобрать JSON")
+        return web.json_response({'ok': False, 'error': 'Invalid JSON'}, status=400)
+
+    app_id = str(uuid.uuid4())
+    logger.info(
+        "Новая заявка %s от %s (%s) — пересылаем в admin-бот",
+        app_id[:8].upper(),
+        data.get('name', '—'),
+        data.get('phone', '—'),
+    )
+
+    # Пересылаем заявку в admin-бот
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                ADMIN_BOT_WEBHOOK_URL,
+                json=data,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    logger.info("Заявка успешно переслана в admin-бот (статус %s)", resp.status)
+                else:
+                    logger.warning("Admin-бот вернул неожиданный статус %s", resp.status)
+                return web.json_response({'ok': True, 'app_id': app_id}, status=resp.status)
     except Exception as e:
-        logger.error("Ошибка при обработке Telegram webhook: %s", e)
+        logger.error("Ошибка при пересылке заявки в admin-бот: %s", e)
         return web.json_response({'ok': False, 'error': str(e)}, status=500)
-    return web.json_response({'ok': True})
 
 
 async def handle_health(request: web.Request) -> web.Response:
@@ -818,16 +853,15 @@ async def handle_health(request: web.Request) -> web.Response:
 # ─── Запуск ───────────────────────────────────────────────────────────────────
 
 async def run_bot() -> None:
-    """Инициализация и запуск бота в режиме webhook."""
+    """Инициализация и запуск бота в режиме polling + HTTP-сервер для заявок."""
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN не установлен!")
 
-    # ── Telegram Application (без updater — webhook mode) ────────────────────
+    # ── Telegram Application (polling mode) ──────────────────────────────────
     application = (
         Application.builder()
         .token(token)
-        .updater(None)
         .build()
     )
 
@@ -838,6 +872,7 @@ async def run_bot() -> None:
             CallbackQueryHandler(application_direct, pattern='^application$'),
         ],
         states={
+
             CHOOSING_SERVICE: [
                 CallbackQueryHandler(service_selected, pattern='^service_'),
             ],
@@ -886,33 +921,24 @@ async def run_bot() -> None:
     application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
     application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
 
-    # Инициализируем приложение
+    # Инициализируем приложение и сбрасываем возможный старый webhook
     await application.initialize()
-    await application.start()
-    logger.info("Telegram Application инициализирован.")
+    await application.bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Webhook сброшен, запускаем polling.")
 
-    # Регистрируем webhook в Telegram
-    if WEBHOOK_BASE_URL:
-        webhook_url = f"{WEBHOOK_BASE_URL.rstrip('/')}/webhook/telegram"
-        await application.bot.set_webhook(webhook_url)
-        logger.info("Webhook зарегистрирован: %s", webhook_url)
-    else:
-        logger.warning("WEBHOOK_BASE_URL не задан — webhook не зарегистрирован.")
-
-    # ── aiohttp Web Application ───────────────────────────────────────────────
+    # ── aiohttp Web Application (для приёма заявок с формы) ──────────────────
     web_app = web.Application()
-    web_app['application'] = application
 
-    web_app.router.add_post('/webhook/telegram', handle_telegram_webhook)
-    web_app.router.add_get('/health',            handle_health)
+    web_app.router.add_post('/webhook/application', handle_application_webhook)
+    web_app.router.add_get('/health',               handle_health)
 
     runner = web.AppRunner(web_app)
     await runner.setup()
-    site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
+    site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
     await site.start()
-    logger.info("HTTP-сервер запущен на http://%s:%s", WEBHOOK_HOST, WEBHOOK_PORT)
+    logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
 
-    # ── Shutdown event — сигнализирует о завершении работы ───────────────────
+    # ── Shutdown event ────────────────────────────────────────────────────────
     shutdown_event = asyncio.Event()
 
     loop = asyncio.get_running_loop()
@@ -923,12 +949,22 @@ async def run_bot() -> None:
             # Windows не поддерживает add_signal_handler
             pass
 
-    # Ждём сигнала завершения
-    await shutdown_event.wait()
+    # ── Запускаем polling в фоне ──────────────────────────────────────────────
+    async with application:
+        await application.start()
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
 
-    logger.info("Остановка бота…")
-    await application.stop()
-    await application.shutdown()
+        # Ждём сигнала завершения
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
     await runner.cleanup()
     logger.info("Бот остановлен.")
 
