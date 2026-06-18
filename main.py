@@ -52,8 +52,9 @@ logger = logging.getLogger(__name__)
     CB_ENTERING_PHONE,
 ) = range(25)
 
-# ID администратора
-ADMIN_ID = 6133417158
+# ID администраторов (через запятую в переменной окружения ADMIN_IDS)
+_admin_ids_env = os.getenv('ADMIN_IDS', '96194412,6133417158,260933221')
+ADMIN_IDS = [int(x.strip()) for x in _admin_ids_env.split(',') if x.strip()]
 
 # URL вебхука admin-бота для передачи заявок
 ADMIN_BOT_WEBHOOK_URL = os.getenv(
@@ -535,14 +536,15 @@ async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"<b>Коктейлей:</b> {package['cocktails']}\n\n"
         f"<b>Время заявки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
     )
-    try:
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=admin_text,
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception as e:
-        logger.error(f"Ошибка при отправке заявки администратору: {e}")
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=admin_text,
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при отправке заявки администратору {admin_id}: {e}")
 
     # Отправляем заявку в admin-бот через webhook
     webhook_payload = {
@@ -907,14 +909,15 @@ async def cb_entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"<b>Итого: {total_str} ₽</b>{dessert_note}\n\n"
         f"<b>Время заявки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
     )
-    try:
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=admin_text,
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception as e:
-        logger.error(f"Ошибка при отправке заявки кофе-брейк администратору: {e}")
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=admin_text,
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при отправке заявки кофе-брейк администратору {admin_id}: {e}")
 
     # Отправляем в admin-бот через webhook
     webhook_payload = {
