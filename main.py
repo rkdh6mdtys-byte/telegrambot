@@ -791,6 +791,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     return ConversationHandler.END
 
+# ─── Неизвестные сообщения ────────────────────────────────────────────────────
+async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ответ на любое текстовое сообщение, не обработанное другими хендлерами."""
+    await update.message.reply_text(
+        "Я не понимаю эту команду 😕\n\nНажми /start чтобы начать заново"
+    )
+
 
 # ─── HTTP-обработчики (для приёма заявок с формы) ────────────────────────────
 
@@ -920,6 +927,9 @@ async def run_bot() -> None:
     application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services$'))
     application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
     application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
 
     # ── Shutdown event ────────────────────────────────────────────────────────
     shutdown_event = asyncio.Event()
