@@ -321,53 +321,51 @@ async def run_admin_bot() -> None:
     tg_app.add_handler(CallbackQueryHandler(cb_status_update,     pattern=r'^status:'))
     tg_app.add_handler(CallbackQueryHandler(cb_list_applications, pattern=r'^list_applications$'))
 
-    # Инициализируем приложение
-    await tg_app.initialize()
-    await tg_app.start()
-    logger.info("Telegram Application инициализирован.")
+    async with tg_app:
+        # Запускаем Telegram Application
+        await tg_app.start()
+        logger.info("Telegram Application инициализирован.")
 
-    # Регистрируем webhook в Telegram
-    if WEBHOOK_BASE_URL:
-        webhook_url = f"{WEBHOOK_BASE_URL.rstrip('/')}/webhook/telegram"
-        await tg_app.bot.set_webhook(webhook_url)
-        logger.info("Webhook зарегистрирован: %s", webhook_url)
-    else:
-        logger.warning("WEBHOOK_BASE_URL не задан — webhook не зарегистрирован.")
+        # Регистрируем webhook в Telegram
+        if WEBHOOK_BASE_URL:
+            webhook_url = f"{WEBHOOK_BASE_URL.rstrip('/')}/webhook/telegram"
+            await tg_app.bot.set_webhook(webhook_url)
+            logger.info("Webhook зарегистрирован: %s", webhook_url)
+        else:
+            logger.warning("WEBHOOK_BASE_URL не задан — webhook не зарегистрирован.")
 
-    # ── aiohttp Web Application ───────────────────────────────────────────────
-    web_app = web.Application()
-    web_app['bot']    = tg_app.bot
-    web_app['tg_app'] = tg_app
+        # ── aiohttp Web Application ───────────────────────────────────────────────
+        web_app = web.Application()
+        web_app['bot']    = tg_app.bot
+        web_app['tg_app'] = tg_app
 
-    web_app.router.add_post('/webhook/telegram',    handle_telegram_webhook)
-    web_app.router.add_post('/webhook/application', handle_application_webhook)
-    web_app.router.add_get('/health',               handle_health)
+        web_app.router.add_post('/webhook/telegram',    handle_telegram_webhook)
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
 
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
-    await site.start()
-    logger.info("HTTP-сервер запущен на http://%s:%s", WEBHOOK_HOST, WEBHOOK_PORT)
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", WEBHOOK_HOST, WEBHOOK_PORT)
 
-    # ── Shutdown event — сигнализирует о завершении работы ───────────────────
-    shutdown_event = asyncio.Event()
+        # ── Shutdown event — сигнализирует о завершении работы ───────────────────
+        shutdown_event = asyncio.Event()
 
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, shutdown_event.set)
-        except NotImplementedError:
-            # Windows не поддерживает add_signal_handler
-            pass
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, shutdown_event.set)
+            except NotImplementedError:
+                # Windows не поддерживает add_signal_handler
+                pass
 
-    # Ждём сигнала завершения
-    await shutdown_event.wait()
+        # Ждём сигнала завершения — event loop свободен для обработки HTTP-запросов
+        await shutdown_event.wait()
 
-    logger.info("Остановка admin-бота…")
-    await tg_app.stop()
-    await tg_app.shutdown()
-    await runner.cleanup()
-    logger.info("Admin-бот остановлен.")
+        logger.info("Остановка admin-бота…")
+        await runner.cleanup()
+        logger.info("Admin-бот остановлен.")
 
 
 def main() -> None:
