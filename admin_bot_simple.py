@@ -12,7 +12,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ADMIN_BOT_TOKEN = os.getenv('TELEGRAM_ADMIN_BOT_TOKEN')
+ADMIN_BOT_TOKEN = os.getenv('TELEGRAM_ADMIN_BOT_TOKEN', '8376656763:AAGCPJWmcebPKoolQ7PUfuwMNYUFY_2Zgyw'))
 ADMIN_CHAT_ID = int(os.getenv('ADMIN_CHAT_ID', '6133417158'))
 PORT = int(os.getenv('ADMIN_BOT_PORT', '8081'))
 
