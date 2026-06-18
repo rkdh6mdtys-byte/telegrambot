@@ -31,7 +31,25 @@ logger = logging.getLogger(__name__)
     CHOOSING_PACKAGE_MANUAL,
     ENTERING_DATE,
     ENTERING_PHONE,
-) = range(7)
+    # ── Кофе-брейк ──
+    CB_CHOOSING_PACKAGE,
+    CB_ENTERING_NAME,
+    CB_STD_AMERICANO,
+    CB_STD_AMERICANO_MILK,
+    CB_STD_GREEN_TEA,
+    CB_STD_BLACK_TEA,
+    CB_STD_WATER,
+    CB_PRE_AMERICANO,
+    CB_PRE_ESPRESSO,
+    CB_PRE_LATTE,
+    CB_PRE_CAPPUCCINO,
+    CB_PRE_FLATWHITE,
+    CB_PRE_TEA,
+    CB_PRE_WATER,
+    CB_PRE_DESSERTS,
+    CB_ENTERING_DATE,
+    CB_ENTERING_PHONE,
+) = range(25)
 
 # ID администратора
 ADMIN_ID = 6133417158
@@ -82,6 +100,83 @@ PACKAGES = {
         'price_int': 125000,
     },
 }
+
+# ─── Кофе-брейк: цены ────────────────────────────────────────────────────────
+COFFEE_BREAK_STANDARD = {
+    'americano':       {'label': '☕ Американо (250мл)',          'price': 200},
+    'americano_milk':  {'label': '☕ Американо с молоком (250мл)', 'price': 220},
+    'green_tea':       {'label': '🍵 Чай зеленый (250мл)',         'price': 150},
+    'black_tea':       {'label': '🍵 Чай черный (250мл)',          'price': 150},
+    'water':           {'label': '💧 Вода (0,5л бутылка)',         'price': 150},
+}
+
+COFFEE_BREAK_PREMIUM = {
+    'americano':  {'label': '☕ Американо (200мл)',                          'price': 200},
+    'espresso':   {'label': '☕ Эспрессо (30мл)',                            'price': 200},
+    'latte':      {'label': '☕ Латте (300мл)',                              'price': 300},
+    'cappuccino': {'label': '☕ Капучино (250мл)',                           'price': 250},
+    'flatwhite':  {'label': '☕ Флэт Вайт (250мл)',                         'price': 300},
+    'tea':        {'label': '🍵 Чай (чайник 0,9л, черный или зеленый)',     'price': 250},
+    'water':      {'label': '💧 Вода (0,5л бутылка)',                       'price': 150},
+    'desserts':   {'label': '🍰 Десерты и тарталетки',                      'price': None},
+}
+
+
+def _cb_parse_qty(text: str) -> int | None:
+    """Парсит количество из текста. Возвращает None при ошибке."""
+    try:
+        val = int(text.strip())
+        if val < 0:
+            return None
+        return val
+    except ValueError:
+        return None
+
+
+def _cb_standard_breakdown(data: dict) -> tuple[str, int]:
+    """Формирует строку разбивки и итоговую сумму для пакета Стандарт."""
+    lines = []
+    total = 0
+    items = [
+        ('americano',      data.get('cb_americano', 0)),
+        ('americano_milk', data.get('cb_americano_milk', 0)),
+        ('green_tea',      data.get('cb_green_tea', 0)),
+        ('black_tea',      data.get('cb_black_tea', 0)),
+        ('water',          data.get('cb_water', 0)),
+    ]
+    for key, qty in items:
+        if qty > 0:
+            item = COFFEE_BREAK_STANDARD[key]
+            subtotal = item['price'] * qty
+            total += subtotal
+            lines.append(f"  {item['label']} × {qty} = {subtotal:,} ₽".replace(',', ' '))
+    return '\n'.join(lines) if lines else '  — ничего не выбрано', total
+
+
+def _cb_premium_breakdown(data: dict) -> tuple[str, int]:
+    """Формирует строку разбивки и итоговую сумму для пакета Премиум."""
+    lines = []
+    total = 0
+    items = [
+        ('americano',  data.get('cb_americano', 0)),
+        ('espresso',   data.get('cb_espresso', 0)),
+        ('latte',      data.get('cb_latte', 0)),
+        ('cappuccino', data.get('cb_cappuccino', 0)),
+        ('flatwhite',  data.get('cb_flatwhite', 0)),
+        ('tea',        data.get('cb_tea', 0)),
+        ('water',      data.get('cb_water', 0)),
+    ]
+    for key, qty in items:
+        if qty > 0:
+            item = COFFEE_BREAK_PREMIUM[key]
+            subtotal = item['price'] * qty
+            total += subtotal
+            lines.append(f"  {item['label']} × {qty} = {subtotal:,} ₽".replace(',', ' '))
+    desserts = data.get('cb_desserts', False)
+    if desserts:
+        lines.append('  🍰 Десерты и тарталетки — по запросу')
+    return '\n'.join(lines) if lines else '  — ничего не выбрано', total
+
 
 def suggest_package(guests: int) -> str:
     """Подобрать пакет по количеству гостей."""
@@ -239,7 +334,7 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return CHOOSING_SERVICE
 
 async def service_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Выбран тип услуги → запрашиваем имя."""
+    """Выбран тип услуги → для кофе-брейка запускаем отдельный флоу, иначе запрашиваем имя."""
     query = update.callback_query
     await query.answer()
 
@@ -250,6 +345,38 @@ async def service_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         'service_coffee':    '☕ Кофе-брейк',
     }
     context.user_data['service'] = service_map.get(query.data, 'Мероприятие')
+
+    # Кофе-брейк идёт по отдельному флоу
+    if query.data == 'service_coffee':
+        keyboard = [
+            [
+                InlineKeyboardButton("☕ Стандарт", callback_data='cb_pkg_standard'),
+                InlineKeyboardButton("✨ Премиум",  callback_data='cb_pkg_premium'),
+            ],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data='menu')],
+        ]
+        await query.edit_message_text(
+            "☕ <b>КОФЕ-БРЕЙК</b>\n\n"
+            "Выберите пакет:\n\n"
+            "<b>☕ Стандарт</b> — готовые напитки:\n"
+            "  • Американо (250мл) — 200 ₽\n"
+            "  • Американо с молоком (250мл) — 220 ₽\n"
+            "  • Чай зеленый (250мл) — 150 ₽\n"
+            "  • Чай черный (250мл) — 150 ₽\n"
+            "  • Вода (0,5л бутылка) — 150 ₽\n\n"
+            "<b>✨ Премиум</b> — свежеприготовленный кофе:\n"
+            "  • Американо (200мл) — 200 ₽\n"
+            "  • Эспрессо (30мл) — 200 ₽\n"
+            "  • Латте (300мл) — 300 ₽\n"
+            "  • Капучино (250мл) — 250 ₽\n"
+            "  • Флэт Вайт (250мл) — 300 ₽\n"
+            "  • Чай (чайник 0,9л) — 250 ₽\n"
+            "  • Вода (0,5л бутылка) — 150 ₽\n"
+            "  • Десерты и тарталетки (опционально)",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML,
+        )
+        return CB_CHOOSING_PACKAGE
 
     await query.edit_message_text(
         f"Вы выбрали: <b>{context.user_data['service']}</b>\n\n"
@@ -473,6 +600,366 @@ async def application_direct(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode=ParseMode.HTML,
     )
     return ENTERING_NAME
+
+# ─── Кофе-брейк: флоу ────────────────────────────────────────────────────────
+
+async def cb_choose_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Выбор пакета кофе-брейка → запрашиваем имя."""
+    query = update.callback_query
+    await query.answer()
+
+    pkg = 'standard' if query.data == 'cb_pkg_standard' else 'premium'
+    context.user_data['cb_package'] = pkg
+    # Сбрасываем предыдущие данные о напитках
+    for key in ('cb_americano', 'cb_americano_milk', 'cb_green_tea', 'cb_black_tea',
+                'cb_espresso', 'cb_latte', 'cb_cappuccino', 'cb_flatwhite',
+                'cb_tea', 'cb_water', 'cb_desserts'):
+        context.user_data.pop(key, None)
+
+    pkg_label = '☕ Стандарт' if pkg == 'standard' else '✨ Премиум'
+    await query.edit_message_text(
+        f"Отлично! Вы выбрали пакет <b>{pkg_label}</b>.\n\n"
+        "Как вас зовут?",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_ENTERING_NAME
+
+
+async def cb_entering_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Имя → первый вопрос о напитках."""
+    context.user_data['name'] = update.message.text.strip()
+    pkg = context.user_data.get('cb_package', 'standard')
+
+    await update.message.reply_text(
+        "☕ Сколько порций <b>американо</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_STD_AMERICANO if pkg == 'standard' else CB_PRE_AMERICANO
+
+
+# ── СТАНДАРТ: шаги ────────────────────────────────────────────────────────────
+
+async def cb_std_americano(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_STD_AMERICANO
+    context.user_data['cb_americano'] = qty
+    await update.message.reply_text(
+        "☕ Сколько порций <b>американо с молоком</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_STD_AMERICANO_MILK
+
+
+async def cb_std_americano_milk(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_STD_AMERICANO_MILK
+    context.user_data['cb_americano_milk'] = qty
+    await update.message.reply_text(
+        "🍵 Сколько порций <b>зеленого чая</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_STD_GREEN_TEA
+
+
+async def cb_std_green_tea(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_STD_GREEN_TEA
+    context.user_data['cb_green_tea'] = qty
+    await update.message.reply_text(
+        "🍵 Сколько порций <b>черного чая</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_STD_BLACK_TEA
+
+
+async def cb_std_black_tea(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_STD_BLACK_TEA
+    context.user_data['cb_black_tea'] = qty
+    await update.message.reply_text(
+        "💧 Нужна ли <b>вода</b>? Если да, сколько бутылок (0,5л)?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_STD_WATER
+
+
+async def cb_std_water(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_STD_WATER
+    context.user_data['cb_water'] = qty
+
+    breakdown, total = _cb_standard_breakdown(context.user_data)
+    total_str = f"{total:,}".replace(',', ' ')
+
+    await update.message.reply_text(
+        "☕ <b>КОФЕ-БРЕЙК — СТАНДАРТ</b>\n\n"
+        "<b>Ваш заказ:</b>\n"
+        f"{breakdown}\n\n"
+        f"💰 <b>Итого: {total_str} ₽</b>\n\n"
+        "На какую дату планируется мероприятие?\n"
+        "<i>(формат: ДД.ММ.ГГГГ)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_ENTERING_DATE
+
+
+# ── ПРЕМИУМ: шаги ─────────────────────────────────────────────────────────────
+
+async def cb_pre_americano(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_PRE_AMERICANO
+    context.user_data['cb_americano'] = qty
+    await update.message.reply_text(
+        "☕ Сколько порций <b>эспрессо</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_PRE_ESPRESSO
+
+
+async def cb_pre_espresso(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_PRE_ESPRESSO
+    context.user_data['cb_espresso'] = qty
+    await update.message.reply_text(
+        "☕ Сколько порций <b>латте</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_PRE_LATTE
+
+
+async def cb_pre_latte(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_PRE_LATTE
+    context.user_data['cb_latte'] = qty
+    await update.message.reply_text(
+        "☕ Сколько порций <b>капучино</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_PRE_CAPPUCCINO
+
+
+async def cb_pre_cappuccino(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_PRE_CAPPUCCINO
+    context.user_data['cb_cappuccino'] = qty
+    await update.message.reply_text(
+        "☕ Сколько порций <b>флэт вайта</b>?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_PRE_FLATWHITE
+
+
+async def cb_pre_flatwhite(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_PRE_FLATWHITE
+    context.user_data['cb_flatwhite'] = qty
+    await update.message.reply_text(
+        "🍵 Нужен ли <b>чай</b>? Если да, сколько чайников (0,9л)?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_PRE_TEA
+
+
+async def cb_pre_tea(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_PRE_TEA
+    context.user_data['cb_tea'] = qty
+    await update.message.reply_text(
+        "💧 Нужна ли <b>вода</b>? Если да, сколько бутылок (0,5л)?\n"
+        "<i>(введите 0, если не нужно)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_PRE_WATER
+
+
+async def cb_pre_water(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    qty = _cb_parse_qty(update.message.text)
+    if qty is None:
+        await update.message.reply_text("⚠️ Введите целое число (0 или больше).")
+        return CB_PRE_WATER
+    context.user_data['cb_water'] = qty
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Да, нужны", callback_data='cb_desserts_yes'),
+            InlineKeyboardButton("❌ Нет",        callback_data='cb_desserts_no'),
+        ],
+    ]
+    await update.message.reply_text(
+        "🍰 Нужны ли <b>десерты и тарталетки</b>?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_PRE_DESSERTS
+
+
+async def cb_pre_desserts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    context.user_data['cb_desserts'] = (query.data == 'cb_desserts_yes')
+
+    breakdown, total = _cb_premium_breakdown(context.user_data)
+    total_str = f"{total:,}".replace(',', ' ')
+    dessert_note = "\n<i>💬 Стоимость десертов уточняется у менеджера.</i>" if context.user_data['cb_desserts'] else ""
+
+    await query.edit_message_text(
+        "✨ <b>КОФЕ-БРЕЙК — ПРЕМИУМ</b>\n\n"
+        "<b>Ваш заказ:</b>\n"
+        f"{breakdown}\n\n"
+        f"💰 <b>Итого: {total_str} ₽</b>{dessert_note}\n\n"
+        "На какую дату планируется мероприятие?\n"
+        "<i>(формат: ДД.ММ.ГГГГ)</i>",
+        parse_mode=ParseMode.HTML,
+    )
+    return CB_ENTERING_DATE
+
+
+# ── Общие шаги: дата и телефон ────────────────────────────────────────────────
+
+async def cb_entering_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Дата кофе-брейка → запрашиваем телефон."""
+    date_str = update.message.text.strip()
+    if not validate_date(date_str):
+        await update.message.reply_text(
+            "⚠️ Неверный формат даты.\n\n"
+            "Пожалуйста, введите дату в формате <b>ДД.ММ.202Х</b>\n"
+            "Пример: <b>15.08.2025</b>",
+            parse_mode=ParseMode.HTML,
+        )
+        return CB_ENTERING_DATE
+    context.user_data['date'] = date_str
+    await update.message.reply_text("Ваш номер телефона для связи?")
+    return CB_ENTERING_PHONE
+
+
+async def cb_entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Телефон → отправляем заявку на кофе-брейк."""
+    phone_str = update.message.text.strip()
+    if not validate_phone(phone_str):
+        await update.message.reply_text(
+            "⚠️ Телефон должен содержать ровно 11 цифр.\n\n"
+            "Пожалуйста, введите номер ещё раз.\n"
+            "Пример: <b>89241234567</b> или <b>+7 924 123-45-67</b>",
+            parse_mode=ParseMode.HTML,
+        )
+        return CB_ENTERING_PHONE
+    context.user_data['phone'] = phone_str
+
+    tg_user = update.effective_user
+    username = tg_user.username if tg_user and tg_user.username else None
+    username_display = f"@{username}" if username else "—"
+
+    pkg = context.user_data.get('cb_package', 'standard')
+    pkg_label = '☕ Стандарт' if pkg == 'standard' else '✨ Премиум'
+
+    if pkg == 'standard':
+        breakdown, total = _cb_standard_breakdown(context.user_data)
+    else:
+        breakdown, total = _cb_premium_breakdown(context.user_data)
+
+    total_str = f"{total:,}".replace(',', ' ')
+    dessert_note = ""
+    if pkg == 'premium' and context.user_data.get('cb_desserts'):
+        dessert_note = "\nДесерты и тарталетки: по запросу"
+
+    # Заявка для администратора
+    admin_text = (
+        "<b>📋 НОВАЯ ЗАЯВКА — КОФЕ-БРЕЙК</b>\n\n"
+        f"<b>Пакет:</b> {pkg_label}\n"
+        f"<b>Имя:</b> {context.user_data.get('name', '—')}\n"
+        f"<b>Username:</b> {username_display}\n"
+        f"<b>Телефон:</b> {context.user_data.get('phone', '—')}\n"
+        f"<b>Дата:</b> {context.user_data.get('date', '—')}\n\n"
+        f"<b>Состав заказа:</b>\n{breakdown}\n\n"
+        f"<b>Итого: {total_str} ₽</b>{dessert_note}\n\n"
+        f"<b>Время заявки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    )
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=admin_text,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке заявки кофе-брейк администратору: {e}")
+
+    # Отправляем в admin-бот через webhook
+    webhook_payload = {
+        'service':   f'☕ Кофе-брейк ({pkg_label})',
+        'name':      context.user_data.get('name', '—'),
+        'username':  username or '',
+        'phone':     context.user_data.get('phone', '—'),
+        'date':      context.user_data.get('date', '—'),
+        'package':   pkg_label,
+        'price':     f"{total_str} ₽",
+        'breakdown': breakdown,
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                ADMIN_BOT_WEBHOOK_URL,
+                json=webhook_payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    logger.info("Заявка кофе-брейк успешно отправлена в admin-бот")
+                else:
+                    logger.warning("Admin-бот вернул статус %s", resp.status)
+    except Exception as e:
+        logger.error("Ошибка при отправке заявки кофе-брейк в admin-бот: %s", e)
+
+    # Подтверждение пользователю
+    confirm_text = (
+        "✅ <b>Спасибо за заявку!</b>\n\n"
+        f"<b>Услуга:</b> ☕ Кофе-брейк\n"
+        f"<b>Пакет:</b> {pkg_label}\n"
+        f"<b>Имя:</b> {context.user_data.get('name', '—')}\n"
+        f"<b>Телефон:</b> {context.user_data.get('phone', '—')}\n"
+        f"<b>Дата:</b> {context.user_data.get('date', '—')}\n\n"
+        f"<b>Состав заказа:</b>\n{breakdown}\n\n"
+        f"<b>Итого: {total_str} ₽</b>{dessert_note}\n\n"
+        "Менеджер свяжется с вами в ближайшее время! 🌊"
+    )
+    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
+    await update.message.reply_text(
+        confirm_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML,
+    )
+    return ConversationHandler.END
+
 
 # ─── Коктейльная карта ────────────────────────────────────────────────────────
 async def cocktails(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -990,6 +1477,59 @@ async def run_bot() -> None:
             ],
             ENTERING_PHONE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, entering_phone),
+            ],
+
+            # ── Кофе-брейк ──────────────────────────────────────────────────
+            CB_CHOOSING_PACKAGE: [
+                CallbackQueryHandler(cb_choose_package, pattern='^cb_pkg_(standard|premium)$'),
+            ],
+            CB_ENTERING_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_entering_name),
+            ],
+            CB_STD_AMERICANO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_std_americano),
+            ],
+            CB_STD_AMERICANO_MILK: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_std_americano_milk),
+            ],
+            CB_STD_GREEN_TEA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_std_green_tea),
+            ],
+            CB_STD_BLACK_TEA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_std_black_tea),
+            ],
+            CB_STD_WATER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_std_water),
+            ],
+            CB_PRE_AMERICANO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_pre_americano),
+            ],
+            CB_PRE_ESPRESSO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_pre_espresso),
+            ],
+            CB_PRE_LATTE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_pre_latte),
+            ],
+            CB_PRE_CAPPUCCINO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_pre_cappuccino),
+            ],
+            CB_PRE_FLATWHITE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_pre_flatwhite),
+            ],
+            CB_PRE_TEA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_pre_tea),
+            ],
+            CB_PRE_WATER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_pre_water),
+            ],
+            CB_PRE_DESSERTS: [
+                CallbackQueryHandler(cb_pre_desserts, pattern='^cb_desserts_(yes|no)$'),
+            ],
+            CB_ENTERING_DATE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_entering_date),
+            ],
+            CB_ENTERING_PHONE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cb_entering_phone),
             ],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
