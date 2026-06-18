@@ -346,8 +346,21 @@ async def run_admin_bot() -> None:
     runner = web.AppRunner(web_app)
     await runner.setup()
     site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
-    await site.start()
-    logger.info("HTTP-сервер запущен на http://%s:%s", WEBHOOK_HOST, WEBHOOK_PORT)
+    try:
+        await site.start()
+    except OSError as exc:
+        logger.critical(
+            "Не удалось запустить HTTP-сервер на %s:%s — %s",
+            WEBHOOK_HOST, WEBHOOK_PORT, exc,
+        )
+        await runner.cleanup()
+        raise
+    # Small delay to ensure the socket is fully ready before accepting connections
+    await asyncio.sleep(0.1)
+    logger.info(
+        "HTTP-сервер слушает на http://%s:%s",
+        WEBHOOK_HOST, WEBHOOK_PORT,
+    )
 
     # ── Shutdown event — сигнализирует о завершении работы ───────────────────
     shutdown_event = asyncio.Event()
