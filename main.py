@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import signal
 import uuid
 from datetime import datetime
@@ -105,6 +106,26 @@ def package_detail_text(key: str) -> str:
         lines.append(f"➕ {extra}")
     lines += ["", f"💰 Стоимость: <b>{p['price']}</b>"]
     return "\n".join(lines)
+
+# ─── Валидация ────────────────────────────────────────────────────────────────
+
+def validate_phone(phone: str) -> bool:
+    """Проверяет, что телефон содержит ровно 11 цифр."""
+    digits = re.sub(r'\D', '', phone)
+    return len(digits) == 11
+
+def validate_date(date_str: str) -> bool:
+    """
+    Проверяет формат ДД.ММ.202Х и корректность даты.
+    Принимает годы 2020–2029.
+    """
+    if not re.fullmatch(r'\d{2}\.\d{2}\.202\d', date_str):
+        return False
+    try:
+        datetime.strptime(date_str, '%d.%m.%Y')
+        return True
+    except ValueError:
+        return False
 
 # ─── Отзывы ───────────────────────────────────────────────────────────────────
 REVIEWS = [
@@ -310,29 +331,57 @@ async def change_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return CHOOSING_PACKAGE_MANUAL
 
 async def manual_package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Ручной выбор пакета → запрашиваем дату."""
+    """Ручной выбор пакета → показываем описание и просим подтвердить."""
     query = update.callback_query
     await query.answer()
 
     package_key = query.data.replace('manual_package_', '')
     context.user_data['package_key'] = package_key
 
+    text = (
+        package_detail_text(package_key)
+        + "\n\nПодтвердите выбор этого пакета:"
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Подтвердить", callback_data=f'confirm_package_{package_key}'),
+            InlineKeyboardButton("🔄 Выбрать другой", callback_data='change_package'),
+        ],
+    ]
     await query.edit_message_text(
-        f"Пакет <b>«{PACKAGES[package_key]['name']}»</b> выбран.\n\n"
-        "На какую дату планируется мероприятие? (формат: ДД.ММ.ГГГГ)",
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML,
     )
-    return ENTERING_DATE
+    return CONFIRMING_PACKAGE
 
 async def entering_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод даты → запрашиваем телефон."""
-    context.user_data['date'] = update.message.text.strip()
+    date_str = update.message.text.strip()
+    if not validate_date(date_str):
+        await update.message.reply_text(
+            "⚠️ Неверный формат даты.\n\n"
+            "Пожалуйста, введите дату в формате <b>ДД.ММ.202Х</b>\n"
+            "Пример: <b>15.08.2025</b>",
+            parse_mode=ParseMode.HTML,
+        )
+        return ENTERING_DATE
+    context.user_data['date'] = date_str
     await update.message.reply_text("Ваш номер телефона для связи?")
     return ENTERING_PHONE
 
 async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод телефона → отправляем заявку."""
-    context.user_data['phone'] = update.message.text.strip()
+    phone_str = update.message.text.strip()
+    if not validate_phone(phone_str):
+        await update.message.reply_text(
+            "⚠️ Телефон должен содержать ровно 11 цифр.\n\n"
+            "Пожалуйста, введите номер ещё раз.\n"
+            "Пример: <b>89241234567</b> или <b>+7 924 123-45-67</b>",
+            parse_mode=ParseMode.HTML,
+        )
+        return ENTERING_PHONE
+    context.user_data['phone'] = phone_str
 
     # Сохраняем username пользователя Telegram
     tg_user = update.effective_user
