@@ -921,23 +921,6 @@ async def run_bot() -> None:
     application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
     application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
 
-    # Инициализируем приложение и сбрасываем возможный старый webhook
-    await application.initialize()
-    await application.bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Webhook сброшен, запускаем polling.")
-
-    # ── aiohttp Web Application (для приёма заявок с формы) ──────────────────
-    web_app = web.Application()
-
-    web_app.router.add_post('/webhook/application', handle_application_webhook)
-    web_app.router.add_get('/health',               handle_health)
-
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
-    await site.start()
-    logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
-
     # ── Shutdown event ────────────────────────────────────────────────────────
     shutdown_event = asyncio.Event()
 
@@ -949,21 +932,37 @@ async def run_bot() -> None:
             # Windows не поддерживает add_signal_handler
             pass
 
-    # ── Запускаем polling в фоне ──────────────────────────────────────────────
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
     async with application:
         await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
         await application.updater.start_polling(
             allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True,
         )
         logger.info("Polling запущен. Бот принимает обновления.")
 
-        # Ждём сигнала завершения
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
         await shutdown_event.wait()
 
         logger.info("Остановка бота…")
         await application.updater.stop()
-        await application.stop()
 
     await runner.cleanup()
     logger.info("Бот остановлен.")
