@@ -536,16 +536,6 @@ async def entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"<b>Коктейлей:</b> {package['cocktails']}\n\n"
         f"<b>Время заявки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
     )
-    for admin_id in ADMIN_IDS:
-        try:
-            await context.bot.send_message(
-                chat_id=admin_id,
-                text=admin_text,
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при отправке заявки администратору {admin_id}: {e}")
-
     # Отправляем заявку в admin-бот через webhook
     webhook_payload = {
         'service':  context.user_data.get('service', '—'),
@@ -909,16 +899,6 @@ async def cb_entering_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"<b>Итого: {total_str} ₽</b>{dessert_note}\n\n"
         f"<b>Время заявки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
     )
-    for admin_id in ADMIN_IDS:
-        try:
-            await context.bot.send_message(
-                chat_id=admin_id,
-                text=admin_text,
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при отправке заявки кофе-брейк администратору {admin_id}: {e}")
-
     # Отправляем в admin-бот через webhook
     webhook_payload = {
         'service':   f'☕ Кофе-брейк ({pkg_label})',
