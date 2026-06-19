@@ -13,7 +13,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ADMIN_BOT_TOKEN = os.getenv('TELEGRAM_ADMIN_BOT_TOKEN')
-ADMIN_CHAT_ID = int(os.getenv('ADMIN_CHAT_ID', '6133417158'))
+_admin_ids_env = os.getenv('ADMIN_CHAT_IDS', '996194412,6133417158,260933221')
+ADMIN_CHAT_IDS = [int(x.strip()) for x in _admin_ids_env.split(',') if x.strip()]
 PORT = int(os.getenv('ADMIN_BOT_PORT', '8081'))
 
 # Хранилище заявок в памяти
@@ -188,12 +189,16 @@ async def handle_application(request: web.Request) -> web.Response:
             f"<b>Время:</b> {app['created_at']}\n"
         )
         
-        await request.app['bot'].send_message(
-            ADMIN_CHAT_ID, text,
-            parse_mode='HTML',
-            reply_markup=status_keyboard(app_id),
-        )
-        logger.info(f"✅ Заявка отправлена администратору")
+        for admin_id in ADMIN_CHAT_IDS:
+            try:
+                await request.app['bot'].send_message(
+                    admin_id, text,
+                    parse_mode='HTML',
+                    reply_markup=status_keyboard(app_id),
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при отправке заявки администратору {admin_id}: {e}")
+        logger.info(f"✅ Заявка отправлена администраторам")
         
         return web.json_response({'ok': True, 'app_id': app_id})
     except Exception as e:
