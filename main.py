@@ -66,6 +66,9 @@ ADMIN_BOT_WEBHOOK_URL = os.getenv(
 HTTP_PORT = int(os.getenv('PORT', '8080'))
 HTTP_HOST = os.getenv('HOST', '0.0.0.0')
 
+# Фотографии портфолио (через запятую в переменной окружения PORTFOLIO_IMAGES)
+PORTFOLIO_IMAGES = os.getenv('PORTFOLIO_IMAGES', '').split(',')
+
 # ─── Пакеты услуг ─────────────────────────────────────────────────────────────
 PACKAGES = {
     'basic': {
@@ -1277,28 +1280,32 @@ async def extra_services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # ─── Портфолио ────────────────────────────────────────────────────────────────
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Наши работы."""
+    """Показать галерею работ."""
     query = update.callback_query
     await query.answer()
 
-    text = (
-        "📸 <b>НАШИ РАБОТЫ</b>\n\n"
-        "Мы организовали более 150 мероприятий:\n"
-        "• 45 свадеб\n"
-        "• 60 корпоративных событий\n"
-        "• 35 частных мероприятий\n"
-        "• 15 винных дегустаций\n\n"
-        "Все наши клиенты остались довольны качеством сервиса!\n\n"
-        "Посмотрите отзывы наших клиентов ⭐"
-    )
-    keyboard = [
-        [InlineKeyboardButton("⭐ Отзывы",       callback_data='reviews')],
-        [InlineKeyboardButton("🏠 Главное меню", callback_data='menu')],
-    ]
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.HTML,
+    if not PORTFOLIO_IMAGES or not any(PORTFOLIO_IMAGES):
+        await query.edit_message_text("📸 Фотографии пока не загружены.")
+        return
+
+    # Отправляем каждую фотку
+    for image_url in PORTFOLIO_IMAGES:
+        image_url = image_url.strip()
+        if image_url:
+            try:
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=image_url
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при отправке фото: {e}")
+
+    # Показываем кнопку назад
+    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="✅ Вот наши работы!",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 # ─── Отзывы ───────────────────────────────────────────────────────────────────
