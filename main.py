@@ -8,7 +8,7 @@ from datetime import datetime
 
 import aiohttp
 from aiohttp import web
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -1288,17 +1288,22 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.edit_message_text("📸 Фотографии пока не загружены.")
         return
 
-    # Отправляем каждую фотку
+    # Создаём список фотографий для альбома
+    media_group = []
     for image_url in PORTFOLIO_IMAGES:
         image_url = image_url.strip()
         if image_url:
-            try:
-                await context.bot.send_photo(
-                    chat_id=update.effective_chat.id,
-                    photo=image_url
-                )
-            except Exception as e:
-                logger.error(f"Ошибка при отправке фото: {e}")
+            media_group.append(InputMediaPhoto(media=image_url))
+
+    if media_group:
+        try:
+            # Отправляем все фотки одним альбомом
+            await context.bot.send_media_group(
+                chat_id=update.effective_chat.id,
+                media=media_group
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при отправке альбома: {e}")
 
     # Показываем кнопку назад
     keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
