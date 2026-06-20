@@ -418,6 +418,7 @@ async def entering_guests(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             InlineKeyboardButton("✅ Да, подходит",    callback_data=f'confirm_package_{suggested_key}'),
             InlineKeyboardButton("🔄 Выбрать другой", callback_data='change_package'),
         ],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data='menu')],
     ]
     await update.message.reply_text(
         text,
@@ -425,6 +426,7 @@ async def entering_guests(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         parse_mode=ParseMode.HTML,
     )
     return CONFIRMING_PACKAGE
+
 
 async def confirm_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Пользователь подтвердил предложенный пакет → запрашиваем дату."""
@@ -452,12 +454,14 @@ async def change_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             InlineKeyboardButton("🍸 Стандарт", callback_data='manual_package_standard'),
             InlineKeyboardButton("✨ Премиум",  callback_data='manual_package_premium'),
         ],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data='menu')],
     ]
     await query.edit_message_text(
         "Выберите пакет:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return CHOOSING_PACKAGE_MANUAL
+
 
 async def manual_package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ручной выбор пакета → показываем описание и просим подтвердить."""
@@ -476,6 +480,7 @@ async def manual_package_selected(update: Update, context: ContextTypes.DEFAULT_
             InlineKeyboardButton("✅ Подтвердить", callback_data=f'confirm_package_{package_key}'),
             InlineKeyboardButton("🔄 Выбрать другой", callback_data='change_package'),
         ],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data='menu')],
     ]
     await query.edit_message_text(
         text,
@@ -483,6 +488,8 @@ async def manual_package_selected(update: Update, context: ContextTypes.DEFAULT_
         parse_mode=ParseMode.HTML,
     )
     return CONFIRMING_PACKAGE
+
+
 
 async def entering_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ввод даты → запрашиваем телефон."""
@@ -1516,9 +1523,13 @@ async def run_bot() -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, cb_entering_phone),
             ],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
+        fallbacks=[
+            CommandHandler('cancel', cancel),
+            CallbackQueryHandler(menu, pattern='^menu$'),
+        ],
         allow_reentry=True,
     )
+
 
     # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
