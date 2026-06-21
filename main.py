@@ -383,9 +383,11 @@ async def service_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return CB_CHOOSING_PACKAGE
 
+    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
     await query.edit_message_text(
         f"Вы выбрали: <b>{context.user_data['service']}</b>\n\n"
         "Как вас зовут?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML,
     )
     return ENTERING_NAME
