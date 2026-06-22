@@ -8,7 +8,7 @@ from datetime import datetime
 
 import aiohttp
 from aiohttp import web
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -1310,7 +1310,7 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ─── Галерея ──────────────────────────────────────────────────────────────────
 async def gallery(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Показать фотографии работ."""
+    """Показать галерею фотографий с навигацией."""
     query = update.callback_query
     await query.answer()
 
@@ -1322,25 +1322,82 @@ async def gallery(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    # Отправляем каждую фотку
-    for image_url in PORTFOLIO_IMAGES:
-        image_url = image_url.strip()
-        if image_url:
-            try:
-                await context.bot.send_photo(
-                    chat_id=update.effective_chat.id,
-                    photo=image_url
-                )
-            except Exception as e:
-                logger.error(f"Ошибка при отправке фото: {e}")
+    # Инициализируем индекс фотографии
+    context.user_data['photo_index'] = 0
+    await show_photo(update, context)
 
-    # Показываем финальное сообщение с кнопкой назад
-    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text="✅ Вот наши работы! Надеемся, вам понравилось! 🌊",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+async def show_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать текущую фотографию с кнопками навигации."""
+    photo_index = context.user_data.get('photo_index', 0)
+    total_photos = len([img for img in PORTFOLIO_IMAGES if img.strip()])
+
+    if photo_index < 0 or photo_index >= total_photos:
+        photo_index = 0
+        context.user_data['photo_index'] = 0
+
+    # Получаем URL текущей фотографии
+    image_url = PORTFOLIO_IMAGES[photo_index].strip()
+
+    # Создаём кнопки навигации
+    keyboard = []
+    nav_buttons = []
+
+    if photo_index > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data='photo_prev'))
+
+    nav_buttons.append(InlineKeyboardButton(f"📍 {photo_index + 1}/{total_photos}", callback_data='photo_info'))
+
+    if photo_index < total_photos - 1:
+        nav_buttons.append(InlineKeyboardButton("Далее ➡️", callback_data='photo_next'))
+
+    keyboard.append(nav_buttons)
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='menu')])
+
+    try:
+        if update.callback_query:
+            # Если это callback, редактируем сообщение
+            await update.callback_query.edit_message_media(
+                media=InputMediaPhoto(media=image_url),
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            # Если это первый запрос, отправляем новое сообщение
+            await update.effective_chat.send_photo(
+                photo=image_url,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке фото: {e}")
+
+async def photo_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Перейти к следующей фотографии."""
+    query = update.callback_query
+    await query.answer()
+
+    total_photos = len([img for img in PORTFOLIO_IMAGES if img.strip()])
+    current_index = context.user_data.get('photo_index', 0)
+
+    if current_index < total_photos - 1:
+        context.user_data['photo_index'] = current_index + 1
+
+    await show_photo(update, context)
+
+async def photo_prev(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Перейти к предыдущей фотографии."""
+    query = update.callback_query
+    await query.answer()
+
+    current_index = context.user_data.get('photo_index', 0)
+
+    if current_index > 0:
+        context.user_data['photo_index'] = current_index - 1
+
+    await show_photo(update, context)
+
+async def photo_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать информацию о текущей фотографии."""
+    query = update.callback_query
+    await query.answer("📍 Используйте кнопки для навигации")
 
 # ─── Отзывы ───────────────────────────────────────────────────────────────────
 async def reviews(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1592,6 +1649,9 @@ async def run_bot() -> None:
     application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services$'))
     application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
     application.add_handler(CallbackQueryHandler(gallery,               pattern='^gallery$'))
+    application.add_handler(CallbackQueryHandler(photo_next,            pattern='^photo_next$'))
+    application.add_handler(CallbackQueryHandler(photo_prev,            pattern='^photo_prev$'))
+    application.add_handler(CallbackQueryHandler(photo_info,            pattern='^photo_info$'))
     application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
     application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
 
