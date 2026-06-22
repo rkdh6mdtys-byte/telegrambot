@@ -1282,12 +1282,45 @@ async def extra_services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # ─── Портфолио ────────────────────────────────────────────────────────────────
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Показать галерею работ."""
+    """Показать галерею работ с описанием."""
     query = update.callback_query
     await query.answer()
 
+    # Сначала показываем описание и статистику
+    description_text = (
+        "📸 <b>НАШИ РАБОТЫ</b>\n\n"
+        "Мы организовали более <b>150 мероприятий</b> и гордимся качеством нашего сервиса:\n\n"
+        "<b>💍 Свадьбы — 45 мероприятий</b>\n"
+        "Авторские коктейли, профессиональные бармены, незабываемая атмосфера. "
+        "Каждая свадьба — это уникальное событие, которое мы делаем особенным.\n\n"
+        "<b>🏢 Корпоративные события — 60 мероприятий</b>\n"
+        "От небольших встреч до масштабных конференций. Наши бармены создают "
+        "идеальную атмосферу для деловых переговоров и неформального общения.\n\n"
+        "<b>🎂 Частные мероприятия — 35 мероприятий</b>\n"
+        "Дни рождения, юбилеи, вечеринки. Мы делаем каждое торжество незабываемым "
+        "с помощью авторских коктейлей и профессионального сервиса.\n\n"
+        "<b>🍷 Винные дегустации — 15 мероприятий</b>\n"
+        "Экскурсии в мир вин, дегустации редких сортов, винное казино. "
+        "Наши сомелье поделятся знаниями и создадут атмосферу истинного удовольствия.\n\n"
+        "✨ <b>Все наши клиенты остались довольны качеством сервиса!</b>"
+    )
+
+    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
+    await query.edit_message_text(
+        description_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML,
+    )
+
+    # Небольшая задержка перед отправкой фотографий
+    await asyncio.sleep(0.5)
+
+    # Теперь отправляем фотографии
     if not PORTFOLIO_IMAGES or not any(PORTFOLIO_IMAGES):
-        await query.edit_message_text("📸 Фотографии пока не загружены.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="📸 Фотографии пока не загружены."
+        )
         return
 
     # Отправляем каждую фотку
@@ -1302,11 +1335,11 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except Exception as e:
                 logger.error(f"Ошибка при отправке фото: {e}")
 
-    # Показываем кнопку назад
+    # Показываем финальное сообщение с кнопкой назад
     keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="✅ Вот наши работы!",
+        text="✅ Вот наши работы! Надеемся, вам понравилось! 🌊",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
