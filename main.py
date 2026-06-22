@@ -1355,9 +1355,17 @@ async def show_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     try:
         if update.callback_query:
-            # Если это callback, редактируем сообщение
-            await update.callback_query.edit_message_media(
-                media=InputMediaPhoto(media=image_url),
+            query = update.callback_query
+            # Удаляем старое сообщение
+            try:
+                await query.message.delete()
+            except:
+                pass
+
+            # Отправляем новое сообщение с фотографией
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=image_url,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
