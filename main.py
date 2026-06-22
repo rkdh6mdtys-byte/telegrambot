@@ -303,7 +303,10 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             InlineKeyboardButton("📸 Наши работы", callback_data='portfolio'),
             InlineKeyboardButton("⭐ Отзывы",      callback_data='reviews'),
         ],
-        [InlineKeyboardButton("🖼️ Презентация",    callback_data='presentation')],
+        [
+            InlineKeyboardButton("🖼️ Галерея",      callback_data='gallery'),
+            InlineKeyboardButton("🖼️ Презентация",  callback_data='presentation'),
+        ],
         [InlineKeyboardButton("📝 Оставить заявку", callback_data='application')],
     ]
     await query.edit_message_text(
@@ -1282,7 +1285,41 @@ async def extra_services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # ─── Портфолио ────────────────────────────────────────────────────────────────
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Показать галерею работ."""
+    """Показать описание наших работ."""
+    query = update.callback_query
+    await query.answer()
+
+    description_text = (
+        "📸 <b>НАШИ РАБОТЫ</b>\n\n"
+        "Мы организовали более <b>150 мероприятий</b> и гордимся качеством нашего сервиса:\n\n"
+        "<b>💍 Свадьбы — 45 мероприятий</b>\n"
+        "Авторские коктейли, профессиональные бармены, незабываемая атмосфера. "
+        "Каждая свадьба — это уникальное событие, которое мы делаем особенным.\n\n"
+        "<b>🏢 Корпоративные события — 60 мероприятий</b>\n"
+        "От небольших встреч до масштабных конференций. Наши бармены создают "
+        "идеальную атмосферу для деловых переговоров и неформального общения.\n\n"
+        "<b>🎂 Частные мероприятия — 35 мероприятий</b>\n"
+        "Дни рождения, юбилеи, вечеринки. Мы делаем каждое торжество незабываемым "
+        "с помощью авторских коктейлей и профессионального сервиса.\n\n"
+        "<b>🍷 Винные дегустации — 15 мероприятий</b>\n"
+        "Экскурсии в мир вин, дегустации редких сортов, винное казино. "
+        "Наши сомелье поделятся знаниями и создадут атмосферу истинного удовольствия.\n\n"
+        "✨ <b>Все наши клиенты остались довольны качеством сервиса!</b>"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("🖼️ Галерея фотографий", callback_data='gallery')],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data='menu')],
+    ]
+    await query.edit_message_text(
+        description_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML,
+    )
+
+# ─── Галерея ──────────────────────────────────────────────────────────────────
+async def gallery(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать галерею фотографий."""
     query = update.callback_query
     await query.answer()
 
@@ -1302,11 +1339,11 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except Exception as e:
                 logger.error(f"Ошибка при отправке фото: {e}")
 
-    # Показываем кнопку назад
+    # Показываем финальное сообщение с кнопкой назад
     keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='menu')]]
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="✅ Вот наши работы!",
+        text="✅ Вот наши работы! Надеемся, вам понравилось! 🌊",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -1559,7 +1596,929 @@ async def run_bot() -> None:
     application.add_handler(CallbackQueryHandler(service_info,           pattern='^service_info$'))
     application.add_handler(CallbackQueryHandler(extra_services,         pattern='^extra_services$'))
     application.add_handler(CallbackQueryHandler(portfolio,              pattern='^portfolio$'))
-    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews$'))
+    application.add_handler(CallbackQueryHandler(gallery,                pattern='^gallery$'))
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(gallery,                pattern='^gallery
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(gallery,                pattern='^gallery
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(gallery,                pattern='^gallery
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(gallery,                pattern='^gallery
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(gallery,                pattern='^gallery
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
+    application.add_handler(CallbackQueryHandler(reviews,                pattern='^reviews
+    application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
+
+    # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
+    application.add_handler(MessageHandler(filters.TEXT, unknown_message))
+
+    # ── Shutdown event ────────────────────────────────────────────────────────
+    shutdown_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler
+            pass
+
+    # ── Запускаем всё внутри async with application: ─────────────────────────
+    # Контекстный менеджер вызывает initialize() и shutdown() автоматически,
+    # поэтому event loop остаётся свободным для обработки HTTP-запросов.
+    async with application:
+        await application.start()
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook сброшен, запускаем polling.")
+
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling запущен. Бот принимает обновления.")
+
+        # ── aiohttp Web Application (для приёма заявок с формы) ──────────────
+        web_app = web.Application()
+
+        web_app.router.add_post('/webhook/application', handle_application_webhook)
+        web_app.router.add_get('/health',               handle_health)
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, HTTP_HOST, HTTP_PORT)
+        await site.start()
+        logger.info("HTTP-сервер запущен на http://%s:%s", HTTP_HOST, HTTP_PORT)
+
+        # Ждём сигнала завершения — event loop свободен для HTTP-запросов
+        await shutdown_event.wait()
+
+        logger.info("Остановка бота…")
+        await application.updater.stop()
+        await application.stop()
+
+    await runner.cleanup()
+    logger.info("Бот остановлен.")
+
+
+def main() -> None:
+    """Точка входа: запускает event loop с run_bot()."""
+    asyncio.run(run_bot())
+
+
+if __name__ == '__main__':
+    main()
+))
     application.add_handler(CallbackQueryHandler(presentation,           pattern='^presentation$'))
 
     # Catch-all: должен быть последним — отвечает на любые необработанные текстовые сообщения
